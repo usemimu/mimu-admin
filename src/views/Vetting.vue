@@ -83,7 +83,7 @@
                 {{ formatRel(item.uploadedMin) }}
               </td>
               <td class="p-3">
-                <button class="btn ghost sm" title="Review">
+                <button class="btn ghost sm" title="Review" @click="openReview(item)">
                   <i class="ph ph-arrow-square-out"></i>
                 </button>
               </td>
@@ -92,14 +92,31 @@
         </table>
       </div>
     </div>
+
+    <!-- Creative Review Drawer -->
+    <DrawerCreativeReview
+      v-if="reviewCreative"
+      :creative="reviewCreative"
+      @close="reviewCreative = null"
+      @toast="$emit('toast', $event)"
+    />
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useMockData } from '../composables/useMockData'
 import { fmt } from '../utils/format'
+import DrawerCreativeReview from '../components/DrawerCreativeReview.vue'
 
 const { MOCK } = useMockData()
+const reviewCreative = ref(null)
+
+defineEmits(['toast'])
 
 const formatRel = (mins) => fmt.rel(mins)
+
+const openReview = (creative) => {
+  reviewCreative.value = creative
+}
 </script>
