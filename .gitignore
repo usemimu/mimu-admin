@@ -16,9 +16,12 @@ dist
 dist-ssr
 *.local
 
-# Original admin-console (React version)
-/admin-console
 
+
+.env
+.env.development
+.env.production
+.env.test
 
 # Editor directories and files
 .vscode/*

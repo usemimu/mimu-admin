@@ -1,35 +1,35 @@
 <template>
   <div class="toast-region">
     <div
-      v-for="toast in toasts"
-      :key="toast.id"
-      :class="['toast', toast.kind || 'info']"
+      v-for="t in toastStore.items"
+      :key="t.id"
+      :class="['toast', t.kind || 'info']"
     >
       <i
         :class="[
           'ph',
-          toast.kind === 'success' ? 'ph-check-circle' :
-          toast.kind === 'error' ? 'ph-x-circle' :
-          toast.kind === 'warning' ? 'ph-warning' :
+          t.kind === 'success' ? 'ph-check-circle' :
+          t.kind === 'error' ? 'ph-x-circle' :
+          t.kind === 'warning' ? 'ph-warning' :
           'ph-info'
         ]"
         :style="{
           fontSize: '16px',
           color: `var(--${
-            toast.kind === 'success' ? 'moss' :
-            toast.kind === 'error' ? 'danger' :
-            toast.kind === 'warning' ? 'gold' :
+            t.kind === 'success' ? 'moss' :
+            t.kind === 'error' ? 'danger' :
+            t.kind === 'warning' ? 'gold' :
             'info'
           }-500)`
         }"
       ></i>
       <div style="flex: 1;">
-        <div class="toast-title">{{ toast.title }}</div>
-        <div v-if="toast.body" class="toast-body">{{ toast.body }}</div>
+        <div class="toast-title">{{ t.title || t.message }}</div>
+        <div v-if="t.body" class="toast-body">{{ t.body }}</div>
       </div>
       <i
         class="ph ph-x"
-        @click="$emit('dismiss', toast.id)"
+        @click="toastStore.dismiss(t.id)"
         style="cursor: pointer; color: var(--fg-3); font-size: 14px;"
       ></i>
     </div>
@@ -37,12 +37,10 @@
 </template>
 
 <script setup>
-defineProps({
-  toasts: {
-    type: Array,
-    default: () => []
-  }
-})
+import { useToastStore } from '../stores/toast'
 
-defineEmits(['dismiss'])
+// Reads directly from the Pinia store now — components no longer pass an
+// array down. Existing call sites that did `@toast="toast"` should switch to
+// `useToastStore()` and call `.success(...)`/`.error(...)` directly.
+const toastStore = useToastStore()
 </script>

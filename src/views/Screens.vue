@@ -173,7 +173,15 @@
     <!-- Table View -->
     <div v-else class="page-body">
       <div class="card overflow-hidden">
-        <table class="w-full">
+        <div v-if="screensQuery.isLoading.value" class="p-6 fg2 text-sm">Loading screens…</div>
+        <div
+          v-else-if="screensQuery.error.value"
+          class="p-6 text-sm"
+          style="color: var(--danger-500)"
+        >
+          {{ screensQuery.error.value?.message || 'Could not load screens.' }}
+        </div>
+        <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
               <th class="p-3">Screen ID</th>
@@ -183,43 +191,52 @@
               <th class="p-3">Last seen</th>
               <th class="p-3 text-right">Uptime</th>
               <th class="p-3">Model</th>
+              <th class="p-3 w-32 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
+            <tr v-if="!screens.length">
+              <td colspan="8" class="p-6 fg2 text-center text-sm">No screens deployed yet.</td>
+            </tr>
             <tr
-              v-for="screen in MOCK.screens"
+              v-for="screen in screens"
               :key="screen.id"
-              class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)] cursor-pointer"
+              class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)]"
             >
               <td class="p-3">
                 <div class="mono font-semibold">{{ screen.id }}</div>
               </td>
-              <td class="p-3 font-medium">{{ screen.host }}</td>
-              <td class="p-3 fg2">{{ screen.lga }}</td>
+              <td class="p-3 font-medium">{{ screen.hostName || screen.host?.businessName || '—' }}</td>
+              <td class="p-3 fg2">{{ humanLga(screen.lga) }}</td>
               <td class="p-3">
-                <span class="pill" :class="{
-                  'pill-active': screen.status === 'active',
-                  'pill-pending': screen.status === 'degraded',
-                  'pill-failed': screen.status === 'offline'
-                }">
-                  <span class="sdot" :class="{
-                    'green': screen.status === 'active',
-                    'amber': screen.status === 'degraded',
-                    'red': screen.status === 'offline',
-                    'pulse': screen.status !== 'active'
-                  }"></span>
+                <span class="pill" :class="pillClass(screen.status)">
+                  <span class="sdot" :class="dotClass(screen.status)"></span>
                   {{ screen.status }}
                 </span>
               </td>
-              <td class="p-3 mono text-xs" :class="{
-                'text-danger-500': screen.last > 240,
-                'text-gold-500': screen.last > 60 && screen.last <= 240,
-                'text-[var(--fg-2)]': screen.last <= 60
-              }">
-                {{ fmt.rel(screen.last) }}
+              <td class="p-3 mono text-xs">
+                {{ relTime(screen.lastSeenAt) }}
               </td>
-              <td class="p-3 text-right mono">{{ screen.uptime }}%</td>
-              <td class="p-3 fg2 text-xs">{{ screen.model }}</td>
+              <td class="p-3 text-right mono">{{ screen.uptimePercent != null ? `${screen.uptimePercent}%` : '—' }}</td>
+              <td class="p-3 fg2 text-xs">{{ screen.model || screen.deviceModel || '—' }}</td>
+              <td class="p-3 text-right">
+                <button
+                  v-if="screen.status === 'active'"
+                  class="btn outline xs"
+                  :disabled="busyId === screen.id"
+                  @click="onPause(screen)"
+                >
+                  Pause
+                </button>
+                <button
+                  v-else-if="screen.status === 'paused' || screen.status === 'inactive'"
+                  class="btn outline xs"
+                  :disabled="busyId === screen.id"
+                  @click="onResume(screen)"
+                >
+                  Resume
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -229,13 +246,80 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useMockData } from '../composables/useMockData'
+import { adminScreensApi } from '../api/screens'
+import { useToastStore } from '../stores/toast'
 import { fmt } from '../utils/format'
 
+// MOCK is still referenced by the map view's pin painting below — keep it
+// imported until we wire the real GeoJSON map renderer.
 const { MOCK } = useMockData()
+const toast = useToastStore()
+const qc = useQueryClient()
+
 const view = ref('table')
 const selectedPin = ref(null)
+
+const screensQuery = useQuery({
+  queryKey: ['admin', 'screens'],
+  queryFn: () => adminScreensApi.list(),
+})
+
+const screens = computed(() => {
+  const raw = screensQuery.data.value
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  return raw.data || raw.items || raw.screens || []
+})
+
+function relTime(ts) {
+  return ts ? fmt.rel(ts) : '—'
+}
+function humanLga(lga) {
+  if (!lga) return '—'
+  return String(lga).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+function pillClass(s) {
+  if (s === 'active' || s === 'online') return 'pill-active'
+  if (s === 'degraded') return 'pill-pending'
+  if (s === 'offline' || s === 'paused' || s === 'retired') return 'pill-failed'
+  return 'pill-pending'
+}
+function dotClass(s) {
+  if (s === 'active' || s === 'online') return 'green'
+  if (s === 'degraded') return 'amber'
+  return 'red pulse'
+}
+
+const busyId = ref(null)
+
+async function onPause(screen) {
+  busyId.value = screen.id
+  try {
+    await adminScreensApi.pause(screen.id)
+    toast.success(`${screen.id} paused.`)
+    await qc.invalidateQueries({ queryKey: ['admin', 'screens'] })
+  } catch (err) {
+    if (!err?.needsReauth) toast.error(err?.message || 'Pause failed.')
+  } finally {
+    busyId.value = null
+  }
+}
+
+async function onResume(screen) {
+  busyId.value = screen.id
+  try {
+    await adminScreensApi.resume(screen.id)
+    toast.success(`${screen.id} resumed.`)
+    await qc.invalidateQueries({ queryKey: ['admin', 'screens'] })
+  } catch (err) {
+    if (!err?.needsReauth) toast.error(err?.message || 'Resume failed.')
+  } finally {
+    busyId.value = null
+  }
+}
 
 const mapPins = [
   { x: 210, y: 240, c: 'green', n: 4 },

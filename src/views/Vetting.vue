@@ -3,88 +3,78 @@
     <div class="page-header">
       <div class="page-title-row">
         <div class="page-title">Vetting queue</div>
-        <span class="pill pill-pending lg">{{ MOCK.vetting.length }} pending</span>
-        <span class="fg2 text-xs">Oldest: 5h 20m · APCON SLA: 24h</span>
+        <span class="pill pill-pending lg">{{ items.length }} pending</span>
+        <span v-if="oldestLabel" class="fg2 text-xs">Oldest: {{ oldestLabel }}</span>
         <div class="spacer"></div>
-        <div class="flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
-          <span class="kbd">J</span><span class="kbd">K</span> navigate ·
-          <span class="kbd">enter</span> open ·
-          <span class="kbd">A</span> approve ·
-          <span class="kbd">R</span> reject
-        </div>
+        <button class="btn outline sm" @click="vettingQuery.refetch">
+          <i class="ph ph-arrow-clockwise"></i> Refresh
+        </button>
       </div>
     </div>
 
     <div class="page-body">
-      <div class="flex items-center gap-2 mb-3 text-xs">
-        <span class="font-semibold uppercase tracking-wider text-[var(--fg-3)]">Filter</span>
-        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-[var(--bg-sunken)] border border-[var(--border)] text-xs">
-          <strong>Status</strong> Pending
-          <span class="cursor-pointer hover:bg-[var(--bg-hover)] rounded px-1"><i class="ph ph-x text-[10px]"></i></span>
-        </span>
-        <button class="btn ghost sm"><i class="ph ph-plus"></i> Add filter</button>
-      </div>
-
       <div class="card overflow-hidden">
-        <table class="w-full">
+        <div v-if="vettingQuery.isLoading.value" class="p-6 fg2 text-sm">Loading…</div>
+        <div
+          v-else-if="vettingQuery.error.value"
+          class="p-6 text-sm"
+          style="color: var(--danger-500)"
+        >
+          {{ vettingQuery.error.value?.message || 'Could not load vetting queue.' }}
+        </div>
+        <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left">
-              <th class="p-3 w-8"></th>
               <th class="p-3 w-12"></th>
               <th class="p-3">Advertiser</th>
               <th class="p-3">Campaign</th>
-              <th class="p-3">Flags</th>
+              <th class="p-3">Status</th>
               <th class="p-3 text-right w-20">Duration</th>
-              <th class="p-3 w-28">Uploaded</th>
-              <th class="p-3 w-20"></th>
+              <th class="p-3 w-28">Submitted</th>
+              <th class="p-3 w-32 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
+            <tr v-if="!items.length">
+              <td colspan="7" class="p-6 fg2 text-center text-sm">
+                Nothing in the queue right now.
+              </td>
+            </tr>
             <tr
-              v-for="(item, i) in MOCK.vetting"
+              v-for="item in items"
               :key="item.id"
-              class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)] cursor-pointer"
+              class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)]"
             >
               <td class="p-3">
-                <input type="checkbox" class="cursor-pointer" />
-              </td>
-              <td class="p-3">
                 <div class="w-8 h-6 rounded bg-[var(--bg-sunken)] flex items-center justify-center text-sm">
-                  {{ item.thumb }}
+                  {{ thumbFor(item) }}
                 </div>
               </td>
               <td class="p-3">
-                <div class="font-semibold">{{ item.adv }}</div>
-                <div class="mono text-[11px] text-[var(--fg-3)]">{{ item.id }}</div>
+                <div class="font-semibold">{{ item.advertiserName || item.advertiser?.businessName || '—' }}</div>
+                <div class="mono text-[11px] text-[var(--fg-3)]">{{ item.advertiserId || item.id }}</div>
               </td>
-              <td class="p-3 text-[var(--fg-2)] truncate max-w-[240px]">{{ item.camp }}</td>
+              <td class="p-3 text-[var(--fg-2)] truncate max-w-[280px]">{{ item.name || item.campaignName || '—' }}</td>
               <td class="p-3">
-                <div class="flex gap-1 flex-wrap">
-                  <span
-                    v-for="flag in item.flags"
-                    :key="flag"
-                    class="pill sm"
-                    :class="{
-                      'pill-active': flag === 'auto_safe',
-                      'pill-pending': flag.includes('review') || flag.includes('verify'),
-                      'pill-failed': !flag.includes('auto') && !flag.includes('review') && !flag.includes('verify')
-                    }"
-                  >
-                    {{ flag.replace(/_/g, ' ') }}
-                  </span>
-                </div>
+                <span class="pill pill-pending">{{ item.status || 'pending' }}</span>
               </td>
-              <td class="p-3 text-right mono">{{ item.dur }}s</td>
-              <td class="p-3 mono text-xs" :class="{
-                'text-danger-500': item.uploadedMin > 240,
-                'text-gold-500': item.uploadedMin > 120 && item.uploadedMin <= 240,
-                'text-[var(--fg-2)]': item.uploadedMin <= 120
-              }">
-                {{ formatRel(item.uploadedMin) }}
-              </td>
-              <td class="p-3">
-                <button class="btn ghost sm" title="Review" @click="openReview(item)">
-                  <i class="ph ph-arrow-square-out"></i>
+              <td class="p-3 text-right mono">{{ item.creative?.durationSeconds ?? item.durationSeconds ?? '—' }}s</td>
+              <td class="p-3 mono text-xs">{{ relTime(item.submittedAt || item.createdAt) }}</td>
+              <td class="p-3 text-right">
+                <button
+                  class="btn outline xs"
+                  :disabled="busyId === item.id"
+                  @click="onApprove(item)"
+                >
+                  Approve
+                </button>
+                <button
+                  class="btn outline xs"
+                  style="margin-left: 6px; color: var(--danger-500)"
+                  :disabled="busyId === item.id"
+                  @click="onReject(item)"
+                >
+                  Reject
                 </button>
               </td>
             </tr>
@@ -92,31 +82,87 @@
         </table>
       </div>
     </div>
-
-    <!-- Creative Review Drawer -->
-    <DrawerCreativeReview
-      v-if="reviewCreative"
-      :creative="reviewCreative"
-      @close="reviewCreative = null"
-      @toast="$emit('toast', $event)"
-    />
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useMockData } from '../composables/useMockData'
+import { computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+import { vettingApi } from '../api/vetting'
+import { useToastStore } from '../stores/toast'
+import { useOptimisticRowMutation } from '../composables/useOptimisticRowMutation'
 import { fmt } from '../utils/format'
-import DrawerCreativeReview from '../components/DrawerCreativeReview.vue'
 
-const { MOCK } = useMockData()
-const reviewCreative = ref(null)
+const toast = useToastStore()
+const QUERY_KEY = ['admin', 'campaigns', 'pending-vetting']
 
-defineEmits(['toast'])
+const vettingQuery = useQuery({
+  queryKey: QUERY_KEY,
+  queryFn: () => vettingApi.pendingVetting(),
+})
 
-const formatRel = (mins) => fmt.rel(mins)
+const items = computed(() => {
+  const raw = vettingQuery.data.value
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  return raw.data || raw.items || raw.campaigns || []
+})
 
-const openReview = (creative) => {
-  reviewCreative.value = creative
+const oldestLabel = computed(() => {
+  const list = items.value
+  if (!list.length) return ''
+  const oldest = list.reduce((a, b) => {
+    const at = new Date(a.submittedAt || a.createdAt || 0).getTime()
+    const bt = new Date(b.submittedAt || b.createdAt || 0).getTime()
+    return at < bt ? a : b
+  })
+  const ts = oldest.submittedAt || oldest.createdAt
+  return ts ? fmt.rel(ts) : ''
+})
+
+function thumbFor(item) {
+  const n = item.name || item.campaignName || '?'
+  return n.charAt(0).toUpperCase()
+}
+function relTime(ts) {
+  return ts ? fmt.rel(ts) : '—'
+}
+
+const approveMutation = useOptimisticRowMutation({
+  queryKey: QUERY_KEY,
+  mutationFn: ({ id }) => vettingApi.vetCampaign(id, { decision: 'approve' }),
+  successLabel: ({ name }) => `${name || 'Campaign'} approved.`,
+  errorLabel: 'Could not approve.',
+})
+
+const rejectMutation = useOptimisticRowMutation({
+  queryKey: QUERY_KEY,
+  mutationFn: ({ id, reason }) =>
+    vettingApi.vetCampaign(id, { decision: 'reject', reason }),
+  successLabel: ({ name }) => `${name || 'Campaign'} rejected.`,
+  errorLabel: 'Could not reject.',
+})
+
+// Used by the disabled-state on the row buttons. The optimistic mutation
+// removes the row from the cache instantly, but if a row hasn't drained
+// yet (mutation in flight) we still want its action buttons disabled.
+const busyId = computed(
+  () =>
+    (approveMutation.isPending.value && approveMutation.variables.value?.id) ||
+    (rejectMutation.isPending.value && rejectMutation.variables.value?.id) ||
+    null,
+)
+
+function onApprove(item) {
+  approveMutation.mutate({ id: item.id, name: item.name })
+}
+
+function onReject(item) {
+  const reason = prompt('Rejection reason (10–500 characters):')
+  if (!reason || reason.trim().length < 10) {
+    toast.error('Rejection requires a reason of at least 10 characters.')
+    return
+  }
+  rejectMutation.mutate({ id: item.id, name: item.name, reason: reason.trim() })
 }
 </script>

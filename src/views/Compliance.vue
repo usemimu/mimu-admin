@@ -2,164 +2,141 @@
   <div>
     <div class="page-header">
       <div class="page-title-row">
-        <div class="page-title">Tax & Compliance</div>
-        <span class="fg2 text-xs">12 pending WHT reports · 3 TIN updates required</span>
+        <div class="page-title">Compliance · refunds</div>
+        <span class="pill pill-pending lg">{{ refunds.length }} pending</span>
         <div class="spacer"></div>
-        <button class="btn outline sm"><i class="ph ph-download-simple"></i> Export tax report</button>
-        <button class="btn primary sm"><i class="ph ph-file-text"></i> Generate WHT certificates</button>
+        <button class="btn outline sm" @click="refundsQuery.refetch">
+          <i class="ph ph-arrow-clockwise"></i> Refresh
+        </button>
       </div>
     </div>
 
     <div class="page-body">
-      <div class="grid-3" style="margin-bottom: 16px;">
-        <div class="metric">
-          <div class="metric-label">Total WHT (YTD)</div>
-          <div class="metric-value">{{ fmt.naira(4280000) }}</div>
-          <div class="fg2" style="font-size: 11px;">5% of ₦85.6M gross</div>
+      <div class="card overflow-hidden">
+        <div v-if="refundsQuery.isLoading.value" class="p-6 fg2 text-sm">Loading…</div>
+        <div
+          v-else-if="refundsQuery.error.value"
+          class="p-6 text-sm"
+          style="color: var(--danger-500)"
+        >
+          {{ refundsQuery.error.value?.message || 'Could not load refund requests.' }}
         </div>
-        <div class="metric">
-          <div class="metric-label">Hosts w/ verified TIN</div>
-          <div class="metric-value">412</div>
-          <div class="fg2" style="font-size: 11px;">97% of 427 active</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">Pending remittance</div>
-          <div class="metric-value">{{ fmt.naira(142000) }}</div>
-          <div class="fg2" style="font-size: 11px;">Due by 28 Apr</div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-bottom: 16px;">
-        <div class="card-head">
-          <div class="card-title">Withholding Tax (WHT) Deductions</div>
-          <div class="spacer"></div>
-          <div class="flex gap-2">
-            <button class="btn outline sm">This month</button>
-            <button class="btn ghost sm">Last 3 months</button>
-            <button class="btn ghost sm">YTD</button>
-          </div>
-        </div>
-        <div class="card-body">
-          <table class="w-full">
-            <thead class="border-b border-[var(--border)]">
-              <tr class="text-left text-xs">
-                <th class="p-3">Host</th>
-                <th class="p-3">TIN</th>
-                <th class="p-3">Period</th>
-                <th class="p-3 text-right">Gross</th>
-                <th class="p-3 text-right">WHT (5%)</th>
-                <th class="p-3 text-right">Net</th>
-                <th class="p-3">Certificate</th>
-                <th class="p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="wht in whtRecords"
-                :key="wht.id"
-                class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)] cursor-pointer"
-              >
-                <td class="p-3">
-                  <div class="font-semibold">{{ wht.host }}</div>
-                  <div class="mono text-[11px] text-[var(--fg-3)]">{{ wht.id }}</div>
-                </td>
-                <td class="p-3 mono fg2 text-xs">{{ wht.tin }}</td>
-                <td class="p-3 fg2">{{ wht.period }}</td>
-                <td class="p-3 text-right mono">{{ fmt.naira(wht.gross) }}</td>
-                <td class="p-3 text-right mono fg2">{{ fmt.naira(wht.wht) }}</td>
-                <td class="p-3 text-right mono font-semibold">{{ fmt.naira(wht.net) }}</td>
-                <td class="p-3">
-                  <button v-if="wht.cert" class="btn ghost sm"><i class="ph ph-file-pdf"></i> View</button>
-                  <span v-else class="fg3 text-xs">—</span>
-                </td>
-                <td class="p-3">
-                  <span class="pill" :class="{
-                    'pill-active': wht.status === 'remitted',
-                    'pill-pending': wht.status === 'pending',
-                    'pill-hold': wht.status === 'processing'
-                  }">
-                    {{ wht.status }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-head">
-          <div class="card-title">TIN Verification Status</div>
-          <div class="spacer"></div>
-          <button class="btn outline sm"><i class="ph ph-download-simple"></i> Export list</button>
-        </div>
-        <div class="card-body">
-          <table class="w-full">
-            <thead class="border-b border-[var(--border)]">
-              <tr class="text-left text-xs">
-                <th class="p-3">Host</th>
-                <th class="p-3">TIN</th>
-                <th class="p-3">Verification</th>
-                <th class="p-3">Lifetime earnings</th>
-                <th class="p-3">Last update</th>
-                <th class="p-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="tin in tinRecords"
-                :key="tin.id"
-                class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)] cursor-pointer"
-              >
-                <td class="p-3">
-                  <div class="font-semibold">{{ tin.host }}</div>
-                  <div class="mono text-[11px] text-[var(--fg-3)]">{{ tin.id }}</div>
-                </td>
-                <td class="p-3 mono fg2">{{ tin.tin || '—' }}</td>
-                <td class="p-3">
-                  <span class="pill" :class="{
-                    'pill-active': tin.verified === 'verified',
-                    'pill-pending': tin.verified === 'pending',
-                    'pill-failed': tin.verified === 'missing'
-                  }">
-                    {{ tin.verified }}
-                  </span>
-                </td>
-                <td class="p-3 mono">{{ fmt.naira(tin.earn) }}</td>
-                <td class="p-3 mono fg2 text-xs">{{ tin.updated ? fmt.rel(tin.updated) : '—' }}</td>
-                <td class="p-3">
-                  <button class="btn ghost sm"><i class="ph ph-pencil-simple"></i> Update</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <table v-else class="w-full">
+          <thead class="border-b border-[var(--border)]">
+            <tr class="text-left text-xs">
+              <th class="p-3">Advertiser</th>
+              <th class="p-3">Reason</th>
+              <th class="p-3 text-right">Amount</th>
+              <th class="p-3">Submitted</th>
+              <th class="p-3 w-44 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="!refunds.length">
+              <td colspan="5" class="p-6 fg2 text-center text-sm">No pending refund requests.</td>
+            </tr>
+            <tr
+              v-for="r in refunds"
+              :key="r.id"
+              class="border-t border-[var(--border)]"
+            >
+              <td class="p-3">
+                <div class="font-semibold">{{ r.advertiserName || r.advertiser?.businessName || '—' }}</div>
+                <div class="mono text-[11px] text-[var(--fg-3)]">{{ r.id }}</div>
+              </td>
+              <td class="p-3 fg2 truncate max-w-[360px]">{{ r.reason || r.description || '—' }}</td>
+              <td class="p-3 text-right mono">{{ fmt.naira(toNaira(r.amountKobo ?? r.amount)) }}</td>
+              <td class="p-3 mono fg2 text-xs">{{ relTime(r.createdAt || r.submittedAt) }}</td>
+              <td class="p-3 text-right">
+                <button class="btn outline xs" :disabled="isBusy(r.id)" @click="onApprove(r)">
+                  Approve
+                </button>
+                <button
+                  class="btn outline xs"
+                  style="margin-left: 6px; color: var(--danger-500)"
+                  :disabled="isBusy(r.id)"
+                  @click="onDeny(r)"
+                >
+                  Deny
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
+import { adminRefundsApi } from '../api/refunds'
+import { useToastStore } from '../stores/toast'
+import { useOptimisticRowMutation } from '../composables/useOptimisticRowMutation'
 import { fmt } from '../utils/format'
 
-const whtRecords = ref([
-  { id: 'H-0412', host: 'Apex Pharmacy', tin: '12345678-0001', period: 'Mar 2026', gross: 48200, wht: 2410, net: 45790, cert: true, status: 'remitted' },
-  { id: 'H-0038', host: 'Jide Electronics', tin: '87654321-0001', period: 'Mar 2026', gross: 38400, wht: 1920, net: 36480, cert: true, status: 'remitted' },
-  { id: 'H-0124', host: 'Fresh & Green Groceries', tin: '45678912-0001', period: 'Mar 2026', gross: 28900, wht: 1445, net: 27455, cert: false, status: 'pending' },
-  { id: 'H-0089', host: 'Lagos Cafe', tin: '98765432-0001', period: 'Mar 2026', gross: 22100, wht: 1105, net: 20995, cert: false, status: 'pending' },
-  { id: 'H-0203', host: 'TopUp Hub', tin: '11223344-0001', period: 'Mar 2026', gross: 31200, wht: 1560, net: 29640, cert: true, status: 'processing' },
-  { id: 'H-0156', host: 'Pearl Salon', tin: '55667788-0001', period: 'Mar 2026', gross: 19800, wht: 990, net: 18810, cert: true, status: 'remitted' },
-])
+const toast = useToastStore()
+const QUERY_KEY = ['admin', 'refunds', 'pending']
 
-const tinRecords = ref([
-  { id: 'H-0412', host: 'Apex Pharmacy', tin: '12345678-0001', verified: 'verified', earn: 284200, updated: 42 },
-  { id: 'H-0038', host: 'Jide Electronics', tin: '87654321-0001', verified: 'verified', earn: 412800, updated: 38 },
-  { id: 'H-0124', host: 'Fresh & Green Groceries', tin: '45678912-0001', verified: 'verified', earn: 198400, updated: 52 },
-  { id: 'H-0089', host: 'Lagos Cafe', tin: null, verified: 'missing', earn: 142000, updated: null },
-  { id: 'H-0203', host: 'TopUp Hub', tin: '11223344-0001', verified: 'pending', earn: 234100, updated: 12 },
-  { id: 'H-0156', host: 'Pearl Salon', tin: '55667788-0001', verified: 'verified', earn: 168900, updated: 28 },
-  { id: 'H-0241', host: 'City Barbers', tin: null, verified: 'missing', earn: 98200, updated: null },
-  { id: 'H-0177', host: 'QuickMart', tin: '99887766-0001', verified: 'pending', earn: 312400, updated: 8 },
-])
+const refundsQuery = useQuery({
+  queryKey: QUERY_KEY,
+  queryFn: () => adminRefundsApi.pending(),
+})
+
+const refunds = computed(() => {
+  const raw = refundsQuery.data.value
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw
+  return raw.data || raw.items || raw.requests || []
+})
+
+function toNaira(v) {
+  if (v == null) return 0
+  if (typeof v === 'object' && v.kobo != null) return Math.round(Number(v.kobo) / 100)
+  const n = typeof v === 'string' ? Number(v) : v
+  if (!Number.isFinite(n)) return 0
+  return n > 1_000_000 ? Math.round(n / 100) : Math.round(n)
+}
+
+function relTime(ts) {
+  return ts ? fmt.rel(ts) : '—'
+}
+
+const approveMutation = useOptimisticRowMutation({
+  queryKey: QUERY_KEY,
+  mutationFn: ({ id, notes }) =>
+    adminRefundsApi.review(id, { decision: 'approve', notes }),
+  successLabel: 'Refund approved.',
+  errorLabel: 'Could not approve.',
+})
+
+const denyMutation = useOptimisticRowMutation({
+  queryKey: QUERY_KEY,
+  mutationFn: ({ id, denialReason }) =>
+    adminRefundsApi.review(id, { decision: 'deny', denialReason }),
+  successLabel: 'Refund denied.',
+  errorLabel: 'Could not deny.',
+})
+
+function isBusy(id) {
+  return (
+    (approveMutation.isPending.value && approveMutation.variables.value?.id === id) ||
+    (denyMutation.isPending.value && denyMutation.variables.value?.id === id)
+  )
+}
+
+function onApprove(r) {
+  const notes = prompt('Approval notes (optional):') || undefined
+  approveMutation.mutate({ id: r.id, notes })
+}
+
+function onDeny(r) {
+  const denialReason = prompt('Why are we denying this refund? (≥10 chars)')
+  if (!denialReason || denialReason.trim().length < 10) {
+    toast.error('A 10+ character denial reason is required.')
+    return
+  }
+  denyMutation.mutate({ id: r.id, denialReason: denialReason.trim() })
+}
 </script>

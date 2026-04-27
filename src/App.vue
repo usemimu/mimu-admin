@@ -1,17 +1,13 @@
 <template>
-  <!-- Loading splash -->
-  <div v-if="loading" class="fixed inset-0 bg-[var(--bg)] flex items-center justify-center z-[1000]">
-    <Logo :size="120" />
-  </div>
+  <!-- Auth-screen layout: centered card, no shell. -->
+  <template v-if="$route.name === 'auth' || !auth.isAuthenticated">
+    <div class="fixed inset-0 bg-[var(--bg)] flex items-center justify-center z-[1000]">
+      <router-view />
+    </div>
+  </template>
 
-  <!-- Auth flow -->
-  <div v-else-if="!isAuthenticated" class="fixed inset-0 bg-[var(--bg)] flex items-center justify-center z-[1000]">
-    <PageAuth :flow="authFlow" @auth-complete="handleAuthComplete" />
-  </div>
-
-  <!-- Main app -->
-  <div v-else>
-    <!-- Main shell -->
+  <!-- Authenticated shell -->
+  <template v-else>
     <div
       class="app-shell"
       :class="{ collapsed }"
@@ -31,72 +27,53 @@
 
       <div class="page">
         <router-view v-slot="{ Component }">
-          <component :is="Component" @toast="toast" />
+          <component :is="Component" />
         </router-view>
       </div>
     </div>
 
-    <!-- Command palette -->
     <CmdK v-if="showCmdk" @close="closeCmdk" />
 
-    <!-- Drawers and modals -->
     <DrawerCreativeReview
       v-if="reviewCreative"
       :creative="reviewCreative"
       @close="reviewCreative = null"
-      @toast="toast"
     />
 
     <DrawerPayout
       v-if="payoutDetail"
       :payout="payoutDetail"
       @close="payoutDetail = null"
-      @toast="toast"
-      @approve="showTOTP = true"
     />
 
-    <TOTPModal
-      v-if="showTOTP"
-      @close="showTOTP = false"
-      @confirm="handleTOTPConfirm"
-    />
+    <ReauthModal />
+  </template>
 
-    <!-- Toast notifications -->
-    <ToastHost :toasts="toasts" @dismiss="dismissToast" />
-  </div>
+  <ToastHost />
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMockData } from './composables/useMockData'
 import Sidebar from './components/Sidebar.vue'
 import Topbar from './components/Topbar.vue'
 import CmdK from './components/CmdK.vue'
 import DrawerCreativeReview from './components/DrawerCreativeReview.vue'
 import DrawerPayout from './components/DrawerPayout.vue'
-import TOTPModal from './components/TOTPModal.vue'
 import ToastHost from './components/ToastHost.vue'
-import PageAuth from './views/Auth.vue'
-import Logo from './components/Logo.vue'
+import ReauthModal from './components/ReauthModal.vue'
+import { useAuthStore } from './stores/auth'
 
-const { MOCK } = useMockData()
 const router = useRouter()
+const auth = useAuthStore()
 
-// State
-const loading = ref(true)
-const isAuthenticated = ref(false)
-const authFlow = ref('login')
 const theme = ref(localStorage.getItem('mimu-admin-theme') || 'light')
 const collapsed = ref(false)
 const showCmdk = ref(false)
-const toasts = ref([])
 const reviewCreative = ref(null)
 const payoutDetail = ref(null)
-const showTOTP = ref(false)
 const seq = ref('')
 
-// Theme management
 const toggleTheme = () => {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', theme.value)
@@ -115,83 +92,46 @@ const closeCmdk = () => {
   showCmdk.value = false
 }
 
-// Toast management
-const toast = (config) => {
-  const id = Date.now() + Math.random()
-  toasts.value.push({ id, ...config })
-  if (config.kind !== 'error') {
-    setTimeout(() => {
-      dismissToast(id)
-    }, 4000)
-  }
-}
-
-const dismissToast = (id) => {
-  toasts.value = toasts.value.filter(t => t.id !== id)
-}
-
 const handleNavigate = (page) => {
   router.push(`/${page === 'dashboard' ? '' : page}`)
 }
 
-const handleTOTPConfirm = () => {
-  showTOTP.value = false
-  payoutDetail.value = null
-  toast({
-    kind: 'success',
-    title: 'Payout approved',
-    body: 'Paystack Transfer initiated. Audit entry logged.'
-  })
+const handleLogout = async () => {
+  await auth.logout()
+  router.push({ name: 'auth' })
 }
 
-const handleAuthComplete = () => {
-  isAuthenticated.value = true
-  router.push('/')
-}
-
-const handleLogout = () => {
-  isAuthenticated.value = false
-  authFlow.value = 'login'
-  router.push('/')
-}
-
-// Global keyboard shortcuts
+// Global keyboard shortcuts.
 const handleKeydown = (e) => {
   const inInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)
 
-  // ⌘K
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault()
     showCmdk.value = true
     return
   }
 
-  // ⌘⇧D
   if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
     e.preventDefault()
     toggleTheme()
     return
   }
 
-  // ⌘/
   if ((e.metaKey || e.ctrlKey) && e.key === '/') {
     e.preventDefault()
     router.push('/shortcuts')
     return
   }
 
-  // Escape
   if (e.key === 'Escape') {
     if (showCmdk.value) showCmdk.value = false
     else if (reviewCreative.value) reviewCreative.value = null
     else if (payoutDetail.value) payoutDetail.value = null
-    else if (showTOTP.value) showTOTP.value = false
     return
   }
 
   if (inInput || showCmdk.value) return
 
-  // G-sequence navigation
   if (e.key === 'g') {
     seq.value = 'g'
     setTimeout(() => { seq.value = '' }, 900)
@@ -218,11 +158,6 @@ const handleKeydown = (e) => {
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value)
   window.addEventListener('keydown', handleKeydown)
-
-  // Simulate loading delay
-  setTimeout(() => {
-    loading.value = false
-  }, 1500)
 })
 
 onUnmounted(() => {
