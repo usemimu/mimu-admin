@@ -18,12 +18,13 @@ export const adminPayoutsApi = {
     const { data } = await http.post(`/payouts/${id}/reject`, { reason })
     return data
   },
-  /** Body: { ids: string[], reason? }. Returns { approvedCount, skippedCount }. */
-  async bulkApprove(ids, reason) {
-    const { data } = await http.post('/payouts/bulk-approve', {
-      ids,
-      ...(reason ? { reason } : {}),
-    })
+  /**
+   * Body: { payoutIds: string[] }. Returns { approvedCount, skippedCount }.
+   * Backend ignores any extra fields, so the optional `reason` is dropped
+   * to match the documented DTO.
+   */
+  async bulkApprove(payoutIds) {
+    const { data } = await http.post('/payouts/bulk-approve', { payoutIds })
     return data
   },
 }

@@ -3,8 +3,10 @@
     <div class="page-header">
       <div class="page-title-row">
         <div class="page-title">Support inbox</div>
-        <span class="pill pill-pending lg">{{ MOCK.tickets.length }} open</span>
-        <span class="fg2 text-xs">1 SLA breach · 2 approaching</span>
+        <span class="pill pill-pending lg">{{ openCount }} open</span>
+        <span class="fg2 text-xs">
+          {{ slaBreachedCount }} SLA breach · {{ slaAtRiskCount }} at risk
+        </span>
         <div class="spacer"></div>
         <div class="flex items-center gap-2 text-[11px] text-[var(--fg-3)]">
           <span class="kbd">J</span><span class="kbd">K</span> navigate ·
@@ -15,7 +17,41 @@
     </div>
 
     <div class="page-body">
-      <div class="card overflow-hidden">
+      <div class="filterbar" style="margin-bottom: 16px;">
+        <span class="chip">
+          <strong>Status</strong> {{ filters.status?.length ? filters.status.join(', ') : 'Any' }}
+        </span>
+        <span class="chip">
+          <strong>Priority</strong> {{ filters.priority?.length ? filters.priority.join(', ') : 'Any' }}
+        </span>
+        <span class="chip">
+          <strong>SLA</strong> {{ filters.slaStatus || 'Any' }}
+        </span>
+        <button class="btn ghost sm" @click="clearFilters"><i class="ph ph-x"></i> Clear</button>
+        <div class="spacer"></div>
+        <button
+          class="btn sm outline"
+          :class="{ active: filters.slaStatus === 'breached' }"
+          @click="toggleSlaFilter('breached')"
+        >
+          SLA breached
+        </button>
+      </div>
+
+      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
+        <span class="fg2">Loading tickets…</span>
+      </div>
+
+      <div v-else-if="error" class="card" style="padding: 24px;">
+        <div style="color: var(--danger-500);">Failed to load tickets: {{ error.message }}</div>
+        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      </div>
+
+      <div v-else-if="tickets.length === 0" class="card" style="padding: 24px; text-align: center;">
+        <span class="fg2">No tickets match the current filters.</span>
+      </div>
+
+      <div v-else class="card overflow-hidden">
         <table class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
@@ -31,55 +67,170 @@
           </thead>
           <tbody>
             <tr
-              v-for="ticket in MOCK.tickets"
-              :key="ticket.id"
+              v-for="t in tickets"
+              :key="t.id"
               class="border-t border-[var(--border)] hover:bg-[var(--bg-hover)] cursor-pointer"
+              @click="openTicket(t.id)"
             >
               <td class="p-3">
-                <i class="ph text-sm" :class="{
-                  'ph-whatsapp-logo text-moss-500': ticket.channel === 'whatsapp',
-                  'ph-envelope': ticket.channel === 'email',
-                  'ph-chat-circle': ticket.channel === 'in-app'
-                }"></i>
+                <i class="ph text-sm" :class="sourceIcon(t.source)"></i>
               </td>
               <td class="p-3">
-                <div class="font-medium">{{ ticket.subj }}</div>
-                <div class="mono text-[11px] text-[var(--fg-3)]">{{ ticket.id }}</div>
+                <div class="font-medium">{{ t.subject }}</div>
+                <div class="mono text-[11px] text-[var(--fg-3)]">{{ t.ticketNumber }}</div>
               </td>
               <td class="p-3">
-                <div class="text-xs">{{ ticket.author }}</div>
-                <div class="fg2 text-[10px] uppercase tracking-wider">{{ ticket.authorRole }}</div>
+                <div class="text-xs">{{ t.authorName || t.userContactEmail || t.userContactPhone || '—' }}</div>
+                <div class="fg2 text-[10px] uppercase tracking-wider">{{ t.userType }}</div>
               </td>
-              <td class="p-3"><span class="pill pill-neutral sm">{{ ticket.cat }}</span></td>
+              <td class="p-3"><span class="pill pill-neutral sm">{{ formatCategory(t.category) }}</span></td>
               <td class="p-3">
-                <span class="pill sm" :class="{
-                  'pill-failed': ticket.prio === 'high',
-                  'pill-pending': ticket.prio === 'med',
-                  'pill-neutral': ticket.prio === 'low'
-                }">{{ ticket.prio }}</span>
+                <span class="pill sm" :class="priorityClass(t.priority)">{{ t.priority }}</span>
               </td>
-              <td class="p-3 fg2 text-xs">{{ ticket.assigned || '—' }}</td>
+              <td class="p-3 fg2 text-xs">{{ t.assigneeName || '—' }}</td>
               <td class="p-3">
-                <span class="pill sm" :class="{
-                  'pill-active': ticket.sla === 'within',
-                  'pill-pending': ticket.sla === 'approaching',
-                  'pill-failed': ticket.sla === 'breach'
-                }">
-                  {{ ticket.sla === 'breach' ? 'breached' : ticket.sla === 'approaching' ? fmt.time(ticket.slaLeft) + ' left' : 'within' }}
+                <span class="pill sm" :class="slaClass(t.slaStatus)">
+                  {{ slaLabel(t.slaStatus) }}
                 </span>
               </td>
-              <td class="p-3 mono fg2 text-[11px]">{{ fmt.rel(ticket.updated) }}</td>
+              <td class="p-3 mono fg2 text-[11px]">{{ relativeTime(t.updatedAt) }}</td>
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div v-if="!isLoading && tickets.length > 0" class="flex ac" style="margin-top: 12px; gap: 8px; justify-content: flex-end;">
+        <button class="btn sm outline" :disabled="filters.offset === 0" @click="prevPage">Previous</button>
+        <button class="btn sm outline" :disabled="tickets.length < filters.limit" @click="nextPage">Next</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { useMockData } from '../composables/useMockData'
-import { fmt } from '../utils/format'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useQuery } from '@tanstack/vue-query'
+import { supportApi } from '../api/support'
 
-const { MOCK } = useMockData()
+const router = useRouter()
+
+const filters = ref({
+  status: undefined,
+  category: undefined,
+  source: undefined,
+  priority: undefined,
+  slaStatus: undefined,
+  assignedTo: undefined,
+  userType: undefined,
+  offset: 0,
+  limit: 50,
+})
+
+// Backend accepts comma-joined multi-values for array fields, so we stringify
+// before posting them as query params.
+const params = computed(() => ({
+  ...filters.value,
+  status: filters.value.status?.join(',') || undefined,
+  category: filters.value.category?.join(',') || undefined,
+  source: filters.value.source?.join(',') || undefined,
+  priority: filters.value.priority?.join(',') || undefined,
+}))
+
+const queryKey = computed(() => ['support-tickets', params.value])
+const { data, isLoading, error, refetch } = useQuery({
+  queryKey,
+  queryFn: () => supportApi.listTickets(params.value),
+  keepPreviousData: true,
+})
+
+// Backend returns rows shaped `{ ticket, user, assignee, slaStatus }` —
+// flatten so the template doesn't have to dig.
+const tickets = computed(() => {
+  const rows = data.value?.tickets ?? []
+  return rows.map((r) => ({
+    id: r.ticket?.id ?? r.id,
+    ticketNumber: r.ticket?.ticketNumber,
+    subject: r.ticket?.subject,
+    category: r.ticket?.category,
+    priority: r.ticket?.priority,
+    status: r.ticket?.status,
+    userType: r.ticket?.userType,
+    source: r.ticket?.source,
+    userContactEmail: r.ticket?.userContactEmail,
+    userContactPhone: r.ticket?.userContactPhone,
+    updatedAt: r.ticket?.updatedAt,
+    authorName: r.user?.name,
+    assigneeName: r.assignee?.name,
+    slaStatus: r.slaStatus,
+  }))
+})
+
+const openCount = computed(() => tickets.value.filter((t) => t.status !== 'closed').length)
+const slaBreachedCount = computed(() => tickets.value.filter((t) => t.slaStatus === 'breached').length)
+const slaAtRiskCount = computed(() => tickets.value.filter((t) => t.slaStatus === 'at_risk').length)
+
+function sourceIcon(source) {
+  if (source === 'whatsapp') return 'ph-whatsapp-logo text-moss-500'
+  if (source === 'email') return 'ph-envelope'
+  if (source === 'in_app' || source === 'in-app') return 'ph-chat-circle'
+  return 'ph-chat-circle'
+}
+
+function formatCategory(c) {
+  return c?.replace(/_/g, ' ') ?? ''
+}
+
+function priorityClass(p) {
+  if (p === 'urgent' || p === 'high') return 'pill-failed'
+  if (p === 'medium') return 'pill-pending'
+  return 'pill-neutral'
+}
+
+function slaClass(status) {
+  if (status === 'breached') return 'pill-failed'
+  if (status === 'at_risk') return 'pill-pending'
+  return 'pill-active'
+}
+
+function slaLabel(status) {
+  if (status === 'breached') return 'breached'
+  if (status === 'at_risk') return 'at risk'
+  return 'on track'
+}
+
+function relativeTime(iso) {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+function toggleSlaFilter(value) {
+  filters.value = {
+    ...filters.value,
+    slaStatus: filters.value.slaStatus === value ? undefined : value,
+    offset: 0,
+  }
+}
+
+function clearFilters() {
+  filters.value = { ...filters.value, status: undefined, category: undefined, source: undefined, priority: undefined, slaStatus: undefined, offset: 0 }
+}
+
+function nextPage() {
+  filters.value = { ...filters.value, offset: filters.value.offset + filters.value.limit }
+}
+function prevPage() {
+  filters.value = { ...filters.value, offset: Math.max(0, filters.value.offset - filters.value.limit) }
+}
+
+function openTicket(id) {
+  router.push({ path: '/ticket-detail', query: { id } })
+}
 </script>

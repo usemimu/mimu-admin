@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-title-row">
         <div class="page-title">Settings</div>
-        <span class="fg2 text-xs">Platform configuration</span>
+        <span class="fg2 text-xs">Account &amp; platform configuration</span>
       </div>
     </div>
 
@@ -25,161 +25,87 @@
 
         <!-- Content area -->
         <div class="col" style="gap: 16px;">
-          <!-- General settings -->
-          <div v-if="activeSection === 'general'" class="card">
+          <!-- Account (live) -->
+          <div v-if="activeSection === 'account'" class="card">
             <div class="card-head">
-              <div class="card-title">General settings</div>
+              <div class="card-title">Your admin session</div>
             </div>
             <div class="card-body" style="display: grid; gap: 16px;">
-              <div class="field">
-                <label>Platform name</label>
-                <input class="input" value="mìmú" />
+              <div v-if="meQuery.isLoading.value" class="fg2 text-sm">Loading session…</div>
+              <div v-else-if="meQuery.error.value" style="color: var(--danger-500);">
+                Could not load session: {{ meQuery.error.value.message }}
               </div>
-              <div class="field">
-                <label>Support email</label>
-                <input class="input" type="email" value="support@mimu.ng" />
+              <div v-else-if="me" style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px;">
+                <span class="fg2 text-xs">Name</span>
+                <span class="font-medium">{{ me.name || '—' }}</span>
+                <span class="fg2 text-xs">Email</span>
+                <span class="mono">{{ me.email }}</span>
+                <span class="fg2 text-xs">Role</span>
+                <span><span class="pill pill-neutral sm">{{ me.role || '—' }}</span></span>
+                <span v-if="me.adminUserId" class="fg2 text-xs">Admin ID</span>
+                <span v-if="me.adminUserId" class="mono text-xs">{{ me.adminUserId }}</span>
               </div>
-              <div class="field">
-                <label>Support WhatsApp</label>
-                <input class="input" value="+234 800 123 4567" />
-              </div>
-              <div class="field">
-                <label>Environment</label>
-                <select class="select">
-                  <option>Production</option>
-                  <option selected>Staging</option>
-                  <option>Development</option>
-                </select>
+
+              <div style="border-top: 1px solid var(--border); padding-top: 16px; display: flex; gap: 8px;">
+                <button class="btn outline sm" @click="logout">
+                  <i class="ph ph-sign-out"></i> Sign out
+                </button>
               </div>
             </div>
           </div>
 
-          <!-- Payments settings -->
-          <div v-if="activeSection === 'payments'" class="card">
-            <div class="card-head">
-              <div class="card-title">Payment settings</div>
-            </div>
-            <div class="card-body" style="display: grid; gap: 16px;">
-              <div class="field">
-                <label>Paystack Secret Key</label>
-                <input class="input" type="password" value="sk_live_••••••••••••••••" readonly />
-              </div>
-              <div class="field">
-                <label>WHT Rate (%)</label>
-                <input class="input" type="number" value="5" />
-                <span class="field-help">Withholding tax deduction rate</span>
-              </div>
-              <div class="field">
-                <label>Payout schedule</label>
-                <select class="select">
-                  <option>Daily</option>
-                  <option selected>Weekly (Monday)</option>
-                  <option>Bi-weekly</option>
-                  <option>Monthly</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Minimum payout threshold</label>
-                <input class="input" type="number" value="5000" />
-                <span class="field-help">Minimum amount (₦) before triggering payout</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- APCON settings -->
-          <div v-if="activeSection === 'apcon'" class="card">
-            <div class="card-head">
-              <div class="card-title">APCON compliance</div>
-            </div>
-            <div class="card-body" style="display: grid; gap: 16px;">
-              <div class="field">
-                <label>Auto-approve safe categories</label>
-                <div class="flex gap-2 flex-wrap">
-                  <span class="pill pill-active sm">Food & Beverage</span>
-                  <span class="pill pill-active sm">Fashion</span>
-                  <span class="pill pill-active sm">Beauty (non-medical)</span>
-                  <span class="pill pill-neutral sm">Real Estate</span>
-                </div>
-                <span class="field-help">Categories that skip manual review</span>
-              </div>
-              <div class="field">
-                <label>Always require review</label>
-                <div class="flex gap-2 flex-wrap">
-                  <span class="pill pill-pending sm">Gambling</span>
-                  <span class="pill pill-pending sm">Financial Services</span>
-                  <span class="pill pill-pending sm">Health Claims</span>
-                  <span class="pill pill-pending sm">Alcohol</span>
-                </div>
-              </div>
-              <div class="field">
-                <label>SLA for manual review</label>
-                <input class="input" type="number" value="24" />
-                <span class="field-help">Hours until review is overdue</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Fraud detection -->
-          <div v-if="activeSection === 'fraud'" class="card">
-            <div class="card-head">
-              <div class="card-title">Fraud detection</div>
-            </div>
-            <div class="card-body" style="display: grid; gap: 16px;">
-              <div class="field">
-                <label>Fraud score threshold</label>
-                <input class="input" type="number" step="0.01" value="0.30" />
-                <span class="field-help">Minimum score to trigger alert (0.00-1.00)</span>
-              </div>
-              <div class="field">
-                <label>Auto-hold payouts above score</label>
-                <input class="input" type="number" step="0.01" value="0.60" />
-                <span class="field-help">Automatically pause payouts for high-risk screens</span>
-              </div>
-              <div class="field">
-                <label>CV confidence threshold</label>
-                <input class="input" type="number" step="0.01" value="0.75" />
-                <span class="field-help">Minimum computer vision confidence for attendance</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Notifications -->
-          <div v-if="activeSection === 'notifications'" class="card">
+          <!-- Notifications: live, per-admin -->
+          <div v-else-if="activeSection === 'notifications'" class="card">
             <div class="card-head">
               <div class="card-title">Notification preferences</div>
+              <div class="spacer"></div>
+              <span v-if="prefsMutation.isPending.value" class="fg2 text-xs">Saving…</span>
+              <span v-else-if="prefsQuery.isLoading.value" class="fg2 text-xs">Loading…</span>
+              <span v-else class="fg2 text-xs">Per admin · auto-saves</span>
             </div>
-            <div class="card-body" style="display: grid; gap: 12px;">
-              <div class="field" style="margin: 0;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" checked />
-                  High fraud score alerts (≥0.80)
-                </label>
+            <div class="card-body" style="padding: 16px; display: grid; gap: 12px;">
+              <div v-if="prefsQuery.error.value" style="color: var(--danger-500); font-size: 13px;">
+                Failed to load preferences: {{ prefsQuery.error.value.message }}
               </div>
-              <div class="field" style="margin: 0;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" checked />
-                  System downtime notifications
+              <template v-else>
+                <label
+                  v-for="pref in prefsRows"
+                  :key="pref.key"
+                  class="flex ac"
+                  style="gap: 10px; cursor: pointer; padding: 8px; border-radius: 6px;"
+                  :class="{ 'opacity-50': prefsMutation.isPending.value }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="prefsLocal[pref.key]"
+                    :disabled="prefsMutation.isPending.value || prefsQuery.isLoading.value"
+                    @change="togglePref(pref.key, $event.target.checked)"
+                  />
+                  <div>
+                    <div class="font-medium text-sm">{{ pref.label }}</div>
+                    <div class="fg2 text-xs">{{ pref.help }}</div>
+                  </div>
                 </label>
-              </div>
-              <div class="field" style="margin: 0;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" checked />
-                  SLA breach warnings
-                </label>
-              </div>
-              <div class="field" style="margin: 0;">
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                  <input type="checkbox" />
-                  Daily summary email
-                </label>
-              </div>
+              </template>
             </div>
           </div>
 
-          <!-- Save button -->
-          <div class="flex gap-2 justify-end">
-            <button class="btn outline">Reset to defaults</button>
-            <button class="btn primary"><i class="ph ph-floppy-disk"></i> Save changes</button>
+          <!-- Read-only / non-wired sections — clearly marked as backend-config -->
+          <div v-else class="card">
+            <div class="card-head">
+              <div class="card-title">{{ currentSection.label }}</div>
+              <div class="spacer"></div>
+              <span class="pill pill-pending sm">Backend config</span>
+            </div>
+            <div class="card-body" style="padding: 16px;">
+              <p class="fg2" style="margin: 0 0 12px; line-height: 1.5;">
+                {{ currentSection.copy }}
+              </p>
+              <p class="fg2 text-xs" style="margin: 0;">
+                Edit these via the API service's environment variables / config — the admin
+                console doesn't expose write access yet.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -188,15 +114,137 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { authApi } from '../api/auth'
+import { adminUsersApi } from '../api/admin-users'
+import { useAuthStore } from '../stores/auth'
+import { useToastStore } from '../stores/toast'
 
-const activeSection = ref('general')
+const router = useRouter()
+const auth = useAuthStore()
+const toast = useToastStore()
+const qc = useQueryClient()
+
+const activeSection = ref('account')
 
 const sections = [
-  { id: 'general', label: 'General', icon: 'ph-gear-six' },
-  { id: 'payments', label: 'Payments', icon: 'ph-currency-circle-dollar' },
-  { id: 'apcon', label: 'APCON', icon: 'ph-shield-check' },
-  { id: 'fraud', label: 'Fraud detection', icon: 'ph-shield-warning' },
+  { id: 'account', label: 'Account', icon: 'ph-user' },
+  {
+    id: 'payments',
+    label: 'Payments',
+    icon: 'ph-currency-circle-dollar',
+    copy: 'Paystack keys, WHT rate, payout schedule and minimum payout threshold are loaded from the API service env (PAYSTACK_*, WHT_RATE, PAYOUT_*).',
+  },
+  {
+    id: 'apcon',
+    label: 'APCON',
+    icon: 'ph-shield-check',
+    copy: 'APCON auto-approve categories and SLA are configured in the campaigns/creatives services. There is no UI surface to edit them yet.',
+  },
+  {
+    id: 'fraud',
+    label: 'Fraud detection',
+    icon: 'ph-shield-warning',
+    copy: 'Fraud thresholds (score cutoff, auto-hold trigger, CV confidence) live in the fraud service. They are tuned in code, not via the console.',
+  },
   { id: 'notifications', label: 'Notifications', icon: 'ph-bell' },
 ]
+
+const currentSection = computed(() =>
+  sections.find((s) => s.id === activeSection.value) ?? sections[0],
+)
+
+const meQuery = useQuery({
+  queryKey: ['admin-me'],
+  queryFn: () => authApi.me(),
+  retry: false,
+})
+
+const me = computed(() => meQuery.data.value?.user || meQuery.data.value)
+
+// ── Notification preferences ────────────────────────────────────────
+const prefsRows = [
+  {
+    key: 'highFraudAlerts',
+    label: 'High fraud score alerts',
+    help: 'Notify me when a fraud flag with score ≥ 0.80 lands in the queue.',
+  },
+  {
+    key: 'systemDowntime',
+    label: 'System downtime',
+    help: 'Outages or degraded health on Paystack, the API gateway, or worker queues.',
+  },
+  {
+    key: 'slaBreach',
+    label: 'SLA breach warnings',
+    help: 'Tickets and vetting items that have breached their SLA window.',
+  },
+  {
+    key: 'dailySummary',
+    label: 'Daily summary digest',
+    help: 'A once-a-day email with yesterday\'s queue activity and KPIs.',
+  },
+]
+
+const prefsLocal = reactive({
+  highFraudAlerts: true,
+  systemDowntime: true,
+  slaBreach: true,
+  dailySummary: false,
+})
+
+const prefsQuery = useQuery({
+  queryKey: ['admin-notification-prefs'],
+  queryFn: () => adminUsersApi.getMyPreferences(),
+  retry: false,
+})
+
+// Sync the server response into the local mirror so the checkboxes
+// reflect the persisted values without losing the optimistic update
+// during a save.
+watch(
+  () => prefsQuery.data.value,
+  (val) => {
+    if (!val) return
+    prefsLocal.highFraudAlerts = !!val.highFraudAlerts
+    prefsLocal.systemDowntime = !!val.systemDowntime
+    prefsLocal.slaBreach = !!val.slaBreach
+    prefsLocal.dailySummary = !!val.dailySummary
+  },
+  { immediate: true },
+)
+
+const prefsMutation = useMutation({
+  mutationFn: (patch) => adminUsersApi.updateMyPreferences(patch),
+  onSuccess: (data) => {
+    qc.setQueryData(['admin-notification-prefs'], data)
+  },
+  onError: (err, patch) => {
+    // Revert the local checkbox if the save failed. The query data
+    // already holds the server-truth value.
+    const previous = prefsQuery.data.value
+    if (previous) {
+      Object.assign(prefsLocal, previous)
+    }
+    toast.error(err?.response?.data?.message || err?.message || 'Could not save preference.')
+  },
+})
+
+function togglePref(key, value) {
+  prefsLocal[key] = value
+  prefsMutation.mutate({ [key]: value })
+}
+
+async function logout() {
+  try {
+    await authApi.logout()
+    auth.$reset?.()
+    toast.success('Signed out.')
+    router.push('/auth')
+  } catch (err) {
+    toast.error(err?.message || 'Sign out failed.')
+  }
+}
 </script>

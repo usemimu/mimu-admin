@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="page-title-row">
         <div class="page-title">Screens</div>
-        <span class="fg2 text-xs">1,247 total · 1,201 active · 34 degraded · 12 offline</span>
+        <span class="fg2 text-xs">{{ summaryLabel }}</span>
         <div class="spacer"></div>
         <div class="flex gap-1">
           <button class="btn sm" :class="view === 'map' ? 'outline' : 'ghost'" @click="view = 'map'">
@@ -99,9 +99,9 @@
           <div class="field" style="margin-bottom: 10px;">
             <label>Status</label>
             <div class="flex g4" style="flex-wrap: wrap;">
-              <button class="btn outline sm"><span class="sdot green"></span> Active 1,201</button>
-              <button class="btn outline sm"><span class="sdot amber"></span> Degraded 34</button>
-              <button class="btn outline sm"><span class="sdot red"></span> Offline 12</button>
+              <button class="btn outline sm"><span class="sdot green"></span> Active {{ statusCounts.active }}</button>
+              <button class="btn outline sm"><span class="sdot amber"></span> Degraded {{ statusCounts.degraded }}</button>
+              <button class="btn outline sm"><span class="sdot red"></span> Offline {{ statusCounts.offline }}</button>
             </div>
           </div>
           <div class="field" style="margin-bottom: 10px;">
@@ -132,9 +132,9 @@
       <!-- Legend -->
       <div style="position: absolute; bottom: 16px; right: 16px;" class="card raised">
         <div style="padding: 10px; font-size: 11px;">
-          <div class="flex ac g8" style="margin-bottom: 4px;"><span class="sdot green"></span> Active (1,201)</div>
-          <div class="flex ac g8" style="margin-bottom: 4px;"><span class="sdot amber"></span> Degraded (34)</div>
-          <div class="flex ac g8"><span class="sdot red"></span> Offline (12)</div>
+          <div class="flex ac g8" style="margin-bottom: 4px;"><span class="sdot green"></span> Active ({{ statusCounts.active }})</div>
+          <div class="flex ac g8" style="margin-bottom: 4px;"><span class="sdot amber"></span> Degraded ({{ statusCounts.degraded }})</div>
+          <div class="flex ac g8"><span class="sdot red"></span> Offline ({{ statusCounts.offline }})</div>
         </div>
       </div>
 
@@ -248,14 +248,10 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { useMockData } from '../composables/useMockData'
 import { adminScreensApi } from '../api/screens'
 import { useToastStore } from '../stores/toast'
 import { fmt } from '../utils/format'
 
-// MOCK is still referenced by the map view's pin painting below — keep it
-// imported until we wire the real GeoJSON map renderer.
-const { MOCK } = useMockData()
 const toast = useToastStore()
 const qc = useQueryClient()
 
@@ -272,6 +268,23 @@ const screens = computed(() => {
   if (!raw) return []
   if (Array.isArray(raw)) return raw
   return raw.data || raw.items || raw.screens || []
+})
+
+const statusCounts = computed(() => {
+  const counts = { active: 0, degraded: 0, offline: 0 }
+  for (const s of screens.value) {
+    if (s.status === 'active' || s.status === 'online') counts.active++
+    else if (s.status === 'degraded') counts.degraded++
+    else if (s.status === 'offline' || s.status === 'paused' || s.status === 'retired') counts.offline++
+  }
+  return counts
+})
+
+const summaryLabel = computed(() => {
+  if (screensQuery.isLoading.value) return 'Loading…'
+  const total = screens.value.length
+  const { active, degraded, offline } = statusCounts.value
+  return `${total} total · ${active} active · ${degraded} degraded · ${offline} offline`
 })
 
 function relTime(ts) {
