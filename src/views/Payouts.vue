@@ -14,6 +14,7 @@
           <i class="ph ph-arrow-clockwise"></i> Refresh
         </button>
         <button
+          v-if="me.can(PERM.PAYOUTS_BULK_APPROVE)"
           class="btn primary sm"
           :disabled="!selected.length || busy"
           @click="onBulkApprove"
@@ -26,14 +27,19 @@
 
     <div class="page-body">
       <div class="card overflow-hidden">
-        <div v-if="payoutsQuery.isLoading.value" class="p-6 fg2 text-sm">Loading…</div>
-        <div
+        <RowSkeleton v-if="payoutsQuery.isLoading.value" :count="6" />
+        <ErrorState
           v-else-if="payoutsQuery.error.value"
-          class="p-6 text-sm"
-          style="color: var(--danger-500)"
-        >
-          {{ payoutsQuery.error.value?.message || 'Could not load payouts.' }}
-        </div>
+          title="Could not load payouts"
+          :message="payoutsQuery.error.value?.message"
+          :on-retry="payoutsQuery.refetch"
+        />
+        <EmptyState
+          v-else-if="!payouts.length"
+          icon="ph-bank"
+          title="No payouts pending"
+          message="Approved hosts get payouts on the configured schedule. Newly settled batches will show up here."
+        />
         <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
@@ -56,11 +62,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!payouts.length">
-              <td colspan="9" class="p-6 fg2 text-center text-sm">
-                Nothing pending.
-              </td>
-            </tr>
             <tr
               v-for="p in payouts"
               :key="p.id"
@@ -84,10 +85,16 @@
               <td class="p-3 mono text-xs fg2">{{ destinationLabel(p) }}</td>
               <td class="p-3 mono fg2 text-[11px]">{{ relTime(p.computedAt || p.createdAt) }}</td>
               <td class="p-3 text-right">
-                <button class="btn outline xs" :disabled="isBusy(p.id)" @click="onApprove(p)">
+                <button
+                  v-if="me.can(PERM.PAYOUTS_APPROVE)"
+                  class="btn outline xs"
+                  :disabled="isBusy(p.id)"
+                  @click="onApprove(p)"
+                >
                   Approve
                 </button>
                 <button
+                  v-if="me.can(PERM.PAYOUTS_APPROVE)"
                   class="btn outline xs"
                   style="margin-left: 6px; color: var(--danger-500)"
                   :disabled="isBusy(p.id)"
@@ -107,14 +114,23 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+
 import { adminPayoutsApi } from '../api/payouts'
 import { useToastStore } from '../stores/toast'
 import { useOptimisticRowMutation } from '../composables/useOptimisticRowMutation'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 import { fmt } from '../utils/format'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
+import { PERM } from '../lib/permissions'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const toast = useToastStore()
 const qc = useQueryClient()
-const QUERY_KEY = ['admin', 'payouts', 'pending']
+const me = useCurrentAdmin()
+const QUERY_KEY = qk.payoutsPending()
 
 const payoutsQuery = useQuery({
   queryKey: QUERY_KEY,
@@ -122,12 +138,7 @@ const payoutsQuery = useQuery({
   refetchInterval: 60_000,
 })
 
-const payouts = computed(() => {
-  const raw = payoutsQuery.data.value
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  return raw.data || raw.items || raw.payouts || []
-})
+const payouts = computed(() => extractList(payoutsQuery.data.value, 'payouts'))
 
 function toNaira(v) {
   if (v == null) return 0

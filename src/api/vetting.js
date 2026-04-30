@@ -32,6 +32,16 @@ export const vettingApi = {
   },
 
   // Creatives ----
+  /**
+   * Creatives awaiting internal vetting (`/v1/admin/creatives/vetting-queue`).
+   * Distinct from `listCreatives` (the cross-status admin list) and the
+   * campaign queue. Backend response shape:
+   *   { queue: [...], pagination: { offset, limit, count } }
+   */
+  async creativeVettingQueue(params = {}) {
+    const { data } = await http.get('/creatives/vetting-queue', { params })
+    return data
+  },
   async listCreatives(params = {}) {
     const { data } = await http.get('/creatives', { params })
     return data

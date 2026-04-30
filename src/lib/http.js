@@ -19,18 +19,39 @@ export const http = axios.create({
 })
 
 let onUnauthenticated = null
+let onPartialAuth = null
 let onForbidden = null
 let onReauthRequired = null
 
+/**
+ * Called only when the backend signals a *terminal* session failure —
+ * `NO_SESSION`, `SESSION_EXPIRED`, `SESSION_REVOKED`, `ACCOUNT_INACTIVE`.
+ * Every other 401/403 stays in-flight as a normal `ApiError` so the
+ * caller can show a focused error and the session stays intact.
+ *
+ * Without this discrimination, any random 401 (e.g. a stale resource,
+ * a permissioned endpoint mid-rollout) would bounce a logged-in admin
+ * to the sign-in screen even though their cookie is still valid — see
+ * the audit notes for the bug this replaces.
+ */
 export function setUnauthenticatedHandler(fn) {
   onUnauthenticated = fn
 }
 
 /**
- * 403 handlers cover two distinct cases the backend signals via response
- * body: insufficient role (just deny + toast) and missing reauth cookie
- * (open the TOTP step-up modal). The discriminator is `error.code` from the
- * response payload — convention TBD with backend, default to plain forbidden.
+ * `PARTIAL_AUTH` = OAuth done, TOTP step pending. Routing to /auth?totp=…
+ * lets the user finish enrollment / verification without having to
+ * Google-sign-in again from scratch.
+ */
+export function setPartialAuthHandler(fn) {
+  onPartialAuth = fn
+}
+
+/**
+ * 403 handlers cover two distinct cases the backend signals via the
+ * `code` field: insufficient role (`PERMISSION_DENIED` → just deny +
+ * toast) and missing reauth cookie (`REAUTH_REQUIRED` → open the TOTP
+ * step-up modal and retry the original request after success).
  */
 export function setForbiddenHandler(fn) {
   onForbidden = fn
@@ -39,6 +60,17 @@ export function setReauthRequiredHandler(fn) {
   onReauthRequired = fn
 }
 
+/**
+ * Codes that indicate the cookie can't be salvaged — caller should be
+ * signed out locally and routed to /auth.
+ */
+const TERMINAL_SESSION_CODES = new Set([
+  'NO_SESSION',
+  'SESSION_EXPIRED',
+  'SESSION_REVOKED',
+  'ACCOUNT_INACTIVE',
+])
+
 http.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -46,12 +78,42 @@ http.interceptors.response.use(
     const code = error.response?.data?.code
 
     if (status === 401) {
-      onUnauthenticated?.()
+      if (code === 'PARTIAL_AUTH') {
+        onPartialAuth?.()
+      } else if (TERMINAL_SESSION_CODES.has(code)) {
+        onUnauthenticated?.(code)
+      }
+      // Any other 401 (or a 401 with no code, e.g. from an upstream
+      // proxy) falls through as a normal ApiError — the calling view
+      // can decide whether to retry, surface the error, or ignore.
     } else if (status === 403) {
       if (code === 'REAUTH_REQUIRED') {
-        onReauthRequired?.(error.config)
-      } else {
-        onForbidden?.()
+        // Deferred-promise dance. Without this, the original axios
+        // call rejects RIGHT NOW, the view's `await` throws, and even
+        // when the modal succeeds and replays the request, the
+        // calling component has already errored out (toast shown,
+        // mutation marked failed, etc.). Instead we return a fresh
+        // pending promise; the modal calls `resolveReauth` /
+        // `rejectReauth` on the auth store to settle it.
+        return new Promise((resolve, reject) => {
+          if (!onReauthRequired) {
+            // No handler wired — fail fast rather than hang the view.
+            reject(normalizeError(error))
+            return
+          }
+          onReauthRequired({
+            config: error.config,
+            resolve,
+            reject: (err) => reject(err ?? normalizeError(error)),
+          })
+        })
+      }
+      if (code === 'ACCOUNT_INACTIVE') {
+        // Server-side disabled the account; treat the same as a
+        // terminal session — the user must contact ops to be re-enabled.
+        onUnauthenticated?.(code)
+      } else if (code !== 'REAUTH_REQUIRED') {
+        onForbidden?.(error.response?.data)
       }
     }
 

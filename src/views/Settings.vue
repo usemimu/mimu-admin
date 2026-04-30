@@ -25,28 +25,48 @@
 
         <!-- Content area -->
         <div class="col" style="gap: 16px;">
-          <!-- Account (live) -->
+          <!-- Account (read-only — live from /me via the auth store) -->
           <div v-if="activeSection === 'account'" class="card">
             <div class="card-head">
               <div class="card-title">Your admin session</div>
+              <div class="spacer"></div>
+              <span v-if="me.lastVerifiedAt.value" class="fg2 text-xs">
+                Verified {{ formatRelative(me.lastVerifiedAt.value) }}
+              </span>
             </div>
             <div class="card-body" style="display: grid; gap: 16px;">
-              <div v-if="meQuery.isLoading.value" class="fg2 text-sm">Loading session…</div>
-              <div v-else-if="meQuery.error.value" style="color: var(--danger-500);">
-                Could not load session: {{ meQuery.error.value.message }}
+              <div v-if="!me.user.value" class="fg2 text-sm">
+                No active session — please sign in.
               </div>
-              <div v-else-if="me" style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px;">
+              <div
+                v-else
+                style="display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px;"
+              >
                 <span class="fg2 text-xs">Name</span>
-                <span class="font-medium">{{ me.name || '—' }}</span>
+                <span class="font-medium">{{ me.displayName.value }}</span>
                 <span class="fg2 text-xs">Email</span>
-                <span class="mono">{{ me.email }}</span>
+                <span class="mono">{{ me.email.value }}</span>
                 <span class="fg2 text-xs">Role</span>
-                <span><span class="pill pill-neutral sm">{{ me.role || '—' }}</span></span>
-                <span v-if="me.adminUserId" class="fg2 text-xs">Admin ID</span>
-                <span v-if="me.adminUserId" class="mono text-xs">{{ me.adminUserId }}</span>
+                <span>
+                  <span class="pill pill-neutral sm">{{ me.roleLabel.value || '—' }}</span>
+                </span>
+                <template v-if="me.user.value.adminUserId">
+                  <span class="fg2 text-xs">Admin ID</span>
+                  <span class="mono text-xs">{{ me.user.value.adminUserId }}</span>
+                </template>
               </div>
 
-              <div style="border-top: 1px solid var(--border); padding-top: 16px; display: flex; gap: 8px;">
+              <div
+                style="border-top: 1px solid var(--border); padding-top: 16px; display: flex; gap: 8px;"
+              >
+                <button
+                  class="btn outline sm"
+                  :disabled="reverifying"
+                  @click="reverifySession"
+                >
+                  <i class="ph ph-arrow-clockwise"></i>
+                  {{ reverifying ? 'Verifying…' : 'Refresh session' }}
+                </button>
                 <button class="btn outline sm" @click="logout">
                   <i class="ph ph-sign-out"></i> Sign out
                 </button>
@@ -117,15 +137,32 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
-import { authApi } from '../api/auth'
 import { adminUsersApi } from '../api/admin-users'
 import { useAuthStore } from '../stores/auth'
 import { useToastStore } from '../stores/toast'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
+import { qk } from '../lib/queryKeys'
 
 const router = useRouter()
 const auth = useAuthStore()
 const toast = useToastStore()
 const qc = useQueryClient()
+
+// Read directly from the auth store — no parallel /me call. The
+// heartbeat in App.vue keeps `me.user` and `me.lastVerifiedAt` fresh.
+const me = useCurrentAdmin()
+
+function formatRelative(iso) {
+  if (!iso) return ''
+  const ms = Date.now() - new Date(iso).getTime()
+  const sec = Math.floor(ms / 1000)
+  if (sec < 5) return 'just now'
+  if (sec < 60) return `${sec}s ago`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  return `${hr}h ago`
+}
 
 const activeSection = ref('account')
 
@@ -155,14 +192,6 @@ const sections = [
 const currentSection = computed(() =>
   sections.find((s) => s.id === activeSection.value) ?? sections[0],
 )
-
-const meQuery = useQuery({
-  queryKey: ['admin-me'],
-  queryFn: () => authApi.me(),
-  retry: false,
-})
-
-const me = computed(() => meQuery.data.value?.user || meQuery.data.value)
 
 // ── Notification preferences ────────────────────────────────────────
 const prefsRows = [
@@ -196,7 +225,7 @@ const prefsLocal = reactive({
 })
 
 const prefsQuery = useQuery({
-  queryKey: ['admin-notification-prefs'],
+  queryKey: qk.notificationPrefs(),
   queryFn: () => adminUsersApi.getMyPreferences(),
   retry: false,
 })
@@ -219,7 +248,7 @@ watch(
 const prefsMutation = useMutation({
   mutationFn: (patch) => adminUsersApi.updateMyPreferences(patch),
   onSuccess: (data) => {
-    qc.setQueryData(['admin-notification-prefs'], data)
+    qc.setQueryData(qk.notificationPrefs(), data)
   },
   onError: (err, patch) => {
     // Revert the local checkbox if the save failed. The query data
@@ -238,13 +267,31 @@ function togglePref(key, value) {
 }
 
 async function logout() {
+  // Route through the store so cookie clear, state flip, and any
+  // cross-tab listeners stay in sync. The store swallows network
+  // failures on the remote logout call (best-effort).
+  await auth.logout()
+  toast.success('Signed out.')
+  router.push('/auth')
+}
+
+const reverifying = ref(false)
+
+/**
+ * Manual heartbeat. The auto-heartbeat in App.vue runs every 60s and
+ * on visibility-change, but admins occasionally want a force-refresh
+ * after an ops change in another tool (role swap, suspend reversal).
+ * Routing through `auth.bootstrap()` reuses the same logic the
+ * heartbeat uses — single code path for "did /me succeed?".
+ */
+async function reverifySession() {
+  reverifying.value = true
   try {
-    await authApi.logout()
-    auth.$reset?.()
-    toast.success('Signed out.')
-    router.push('/auth')
-  } catch (err) {
-    toast.error(err?.message || 'Sign out failed.')
+    const ok = await auth.bootstrap()
+    if (ok) toast.success('Session refreshed.')
+    else toast.warning('Session looks stale — try signing out and back in.')
+  } finally {
+    reverifying.value = false
   }
 }
 </script>

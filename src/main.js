@@ -8,6 +8,7 @@ import './assets/styles/main.css'
 
 import {
   setUnauthenticatedHandler,
+  setPartialAuthHandler,
   setForbiddenHandler,
   setReauthRequiredHandler,
 } from './lib/http'
@@ -36,7 +37,6 @@ const routes = [
   { path: '/advertiser-detail', name: 'advertiser-detail', component: () => import('./views/AdvertiserDetail.vue'), meta: { requiresAuth: true } },
   { path: '/campaigns', name: 'campaigns', component: () => import('./views/Campaigns.vue'), meta: { requiresAuth: true } },
   { path: '/audit', name: 'audit', component: () => import('./views/Audit.vue'), meta: { requiresAuth: true } },
-  { path: '/compliance', name: 'compliance', component: () => import('./views/Compliance.vue'), meta: { requiresAuth: true } },
   { path: '/admins', name: 'admins', component: () => import('./views/AdminUsers.vue'), meta: { requiresAuth: true } },
   { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue'), meta: { requiresAuth: true } },
   { path: '/shortcuts', name: 'shortcuts', component: () => import('./views/Shortcuts.vue'), meta: { requiresAuth: true } },
@@ -67,24 +67,49 @@ app.use(VueQueryPlugin, { queryClient })
 const auth = useAuthStore()
 const toast = useToastStore()
 
-// 401 → boot to /auth. Don't redirect-loop if we're already there.
-setUnauthenticatedHandler(() => {
+// Terminal session — backend explicitly told us the cookie is dead.
+// Surface a focused message so the user knows *why* they're being
+// signed out, not just "something went wrong".
+setUnauthenticatedHandler((code) => {
   auth.forceSignOut()
+  if (code === 'SESSION_EXPIRED') {
+    toast.info('Your session expired. Please sign in again.')
+  } else if (code === 'SESSION_REVOKED') {
+    toast.error('Your session was revoked. Please sign in again.')
+  } else if (code === 'ACCOUNT_INACTIVE') {
+    toast.error('Your admin account is no longer active. Contact ops.')
+  }
   if (router.currentRoute.value.name !== 'auth') {
     router.replace({ name: 'auth' })
   }
 })
 
+// PARTIAL_AUTH = OAuth done, TOTP step pending. Don't sign the user
+// out — route them to /auth?totp=verify so they can complete TOTP
+// without re-running the Google flow.
+setPartialAuthHandler(() => {
+  if (router.currentRoute.value.name !== 'auth') {
+    router.replace({ name: 'auth', query: { totp: 'verify' } })
+  }
+})
+
+// PERMISSION_DENIED — toast, leave the session intact. The view that
+// fired the request will see a normal ApiError and can render its
+// own state (we don't redirect because the user might have permission
+// on adjacent actions on the same page).
 setForbiddenHandler(() => {
   toast.error("You don't have permission to perform this action.")
 })
 
-// 403 + REAUTH_REQUIRED → queue the original request and surface a TOTP modal.
-// The modal lives in App.vue (Stage 2 wires it); for now we queue the
-// request and show a placeholder toast so it's visible during dev.
-setReauthRequiredHandler((originalRequest) => {
-  auth.queueReauth(originalRequest)
-  toast.error('This action requires re-authentication. Open the TOTP prompt to continue.')
+// REAUTH_REQUIRED — the HTTP interceptor builds a deferred Promise
+// and hands us `{ config, resolve, reject }`. We push it into the
+// auth store; ReauthModal (mounted in App.vue) reacts to the
+// store's `pendingReauthRequest` becoming non-null, opens itself,
+// captures TOTP, and on success replays the request and resolves
+// the deferred promise. The view's `await` returns the replayed
+// response as if the 403 never happened.
+setReauthRequiredHandler((deferred) => {
+  auth.queueReauth(deferred)
 })
 
 // Bootstrap auth before mounting so the route guard has a real status.

@@ -42,11 +42,11 @@
             Scan this QR code with your authenticator app, then enter the 6-digit code below.
           </div>
           <div
-            v-if="enrollData?.qrCode"
+            v-if="enrollData?.qrCodeDataUrl"
             style="display: flex; justify-content: center; margin-bottom: 16px"
           >
             <img
-              :src="enrollData.qrCode"
+              :src="enrollData.qrCodeDataUrl"
               alt="TOTP QR code"
               style="width: 180px; height: 180px; background: #fff; padding: 8px; border-radius: 8px"
             />

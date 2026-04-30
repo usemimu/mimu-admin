@@ -34,17 +34,24 @@
         </div>
       </div>
 
-      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading admin users…</span>
+      <div v-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="6" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load admin users"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
-      <div v-else-if="users.length === 0" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">No admins match the current filters.</span>
+      <div v-else-if="users.length === 0" class="card">
+        <EmptyState
+          icon="ph-users-three"
+          title="No admins match"
+          message="Adjust filters or invite a new admin user."
+        />
       </div>
 
       <div v-else class="card overflow-hidden">
@@ -85,7 +92,7 @@
                 <select
                   :value="u.role"
                   class="input sm"
-                  :disabled="u.id === me?.adminUserId"
+                  :disabled="u.id === myAdminUserId"
                   @change="changeRole(u, $event.target.value)"
                 >
                   <option v-for="r in roleOptions" :key="r" :value="r">
@@ -111,7 +118,7 @@
                   >
                     Revoke
                   </button>
-                  <template v-else-if="u.id !== me?.adminUserId">
+                  <template v-else-if="u.id !== myAdminUserId">
                     <button
                       v-if="u.status === 'active'"
                       class="btn outline xs"
@@ -200,9 +207,14 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { adminUsersApi } from '../api/admin-users'
-import { authApi } from '../api/auth'
 import { useToastStore } from '../stores/toast'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
+import { qk } from '../lib/queryKeys'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const qc = useQueryClient()
 const toast = useToastStore()
@@ -238,14 +250,14 @@ const params = computed(() => ({
   status: filters.value.status?.join(',') || undefined,
 }))
 
-const meQuery = useQuery({
-  queryKey: ['admin-me'],
-  queryFn: () => authApi.me(),
-  retry: false,
-})
-const me = computed(() => meQuery.data.value?.user || meQuery.data.value)
+const me = useCurrentAdmin()
+// Local ID handle the template uses to disable self-actions (can't
+// suspend or update your own row). The composable exposes the user
+// as a ref, but the template still reads `myAdminUserId` like a
+// flat object — alias it so we don't have to chase every callsite.
+const myAdminUserId = computed(() => me.user.value?.adminUserId)
 
-const queryKey = computed(() => ['admin-users', params.value])
+const queryKey = computed(() => qk.adminUsers(params.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => adminUsersApi.list(params.value),

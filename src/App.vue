@@ -155,13 +155,46 @@ const handleKeydown = (e) => {
   }
 }
 
+// Session heartbeat: re-verify /me every 60s while the tab is visible
+// and the admin is signed in. Catches server-side revocation (admin
+// account disabled, password change, manual session kill) early —
+// without it, the user only finds out when they click something. Also
+// re-verifies on visibilitychange so coming back to a long-idle tab
+// doesn't show stale state.
+const HEARTBEAT_INTERVAL_MS = 60_000
+let heartbeatTimer = null
+
+const beat = () => {
+  if (document.hidden) return
+  if (!auth.isAuthenticated) return
+  // Skip if we just verified — guards against tab-flip storms.
+  if (auth.lastVerifiedAt) {
+    const ageMs = Date.now() - new Date(auth.lastVerifiedAt).getTime()
+    if (ageMs < HEARTBEAT_INTERVAL_MS - 1_000) return
+  }
+  // Errors are handled inside `bootstrap` (it flips status on
+  // terminal codes and ignores transient ones), so no try/catch here.
+  auth.bootstrap()
+}
+
+const handleVisibility = () => {
+  if (!document.hidden) beat()
+}
+
 onMounted(() => {
   document.documentElement.setAttribute('data-theme', theme.value)
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('visibilitychange', handleVisibility)
+  heartbeatTimer = setInterval(beat, HEARTBEAT_INTERVAL_MS)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('visibilitychange', handleVisibility)
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer)
+    heartbeatTimer = null
+  }
 })
 </script>
 

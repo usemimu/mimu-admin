@@ -103,26 +103,22 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+
 import { hostInvitesApi } from '../api/hosts'
 import { useToastStore } from '../stores/toast'
 import { fmt } from '../utils/format'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
 
 const toast = useToastStore()
 const qc = useQueryClient()
 
 const invitesQuery = useQuery({
-  queryKey: ['admin', 'host-invites'],
+  queryKey: qk.hostInvites(),
   queryFn: () => hostInvitesApi.list(),
 })
 
-const invites = computed(() => {
-  const raw = invitesQuery.data.value
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw.data)) return raw.data
-  if (Array.isArray(raw.items)) return raw.items
-  return []
-})
+const invites = computed(() => extractList(invitesQuery.data.value, 'invites'))
 
 const summary = computed(() => {
   const list = invites.value
@@ -154,7 +150,7 @@ async function onCreate() {
     form.businessName = ''
     form.phone = ''
     form.email = ''
-    await qc.invalidateQueries({ queryKey: ['admin', 'host-invites'] })
+    await qc.invalidateQueries({ queryKey: qk.hostInvites() })
   } catch (err) {
     toast.error(err?.message || 'Could not send invite.')
   } finally {
@@ -167,7 +163,7 @@ async function onResend(id) {
   try {
     await hostInvitesApi.resend(id)
     toast.success('Invite resent.')
-    await qc.invalidateQueries({ queryKey: ['admin', 'host-invites'] })
+    await qc.invalidateQueries({ queryKey: qk.hostInvites() })
   } catch (err) {
     toast.error(err?.message || 'Could not resend invite.')
   } finally {
@@ -181,7 +177,7 @@ async function onRevoke(id) {
   try {
     await hostInvitesApi.revoke(id)
     toast.success('Invite revoked.')
-    await qc.invalidateQueries({ queryKey: ['admin', 'host-invites'] })
+    await qc.invalidateQueries({ queryKey: qk.hostInvites() })
   } catch (err) {
     toast.error(err?.message || 'Could not revoke invite.')
   } finally {

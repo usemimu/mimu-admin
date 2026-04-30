@@ -30,17 +30,28 @@
         </button>
       </div>
 
-      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading queue…</span>
+      <div v-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="6" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load campaigns: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load campaigns"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
-      <div v-else-if="campaigns.length === 0" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Queue is empty.</span>
+      <div v-else-if="campaigns.length === 0" class="card">
+        <EmptyState
+          icon="ph-flag"
+          :title="activeTab === 'vetting' ? 'Nothing to vet right now' : 'Nothing awaiting APCON'"
+          :message="
+            activeTab === 'vetting'
+              ? 'New campaign submissions land here automatically.'
+              : 'Vetted campaigns appear here while waiting on APCON sign-off.'
+          "
+        />
       </div>
 
       <div v-else class="card overflow-hidden">
@@ -170,8 +181,14 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { vettingApi } from '../api/vetting'
 import { useToastStore } from '../stores/toast'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const qc = useQueryClient()
 const toast = useToastStore()
@@ -180,16 +197,20 @@ const activeTab = ref('vetting')
 
 // Run both queries up front so the tab counters always reflect reality.
 const vettingQuery = useQuery({
-  queryKey: ['campaigns-pending-vetting'],
+  queryKey: qk.campaignsPendingVetting(),
   queryFn: () => vettingApi.pendingVetting(),
 })
 const approvalQuery = useQuery({
-  queryKey: ['campaigns-pending-approval'],
+  queryKey: qk.campaignsPendingApproval(),
   queryFn: () => vettingApi.pendingApproval(),
 })
 
-const pendingVettingCount = computed(() => vettingQuery.data.value?.campaigns?.length ?? 0)
-const pendingApprovalCount = computed(() => approvalQuery.data.value?.campaigns?.length ?? 0)
+const pendingVettingCount = computed(
+  () => extractList(vettingQuery.data.value, 'campaigns').length,
+)
+const pendingApprovalCount = computed(
+  () => extractList(approvalQuery.data.value, 'campaigns').length,
+)
 
 const isLoading = computed(() =>
   activeTab.value === 'vetting' ? vettingQuery.isLoading.value : approvalQuery.isLoading.value,
@@ -218,8 +239,8 @@ const vetMutation = useMutation({
     rejectingCampaign.value = null
     rejectReason.value = ''
     toast.success('Campaign updated.')
-    qc.invalidateQueries({ queryKey: ['campaigns-pending-vetting'] })
-    qc.invalidateQueries({ queryKey: ['campaigns-pending-approval'] })
+    qc.invalidateQueries({ queryKey: qk.campaignsPendingVetting() })
+    qc.invalidateQueries({ queryKey: qk.campaignsPendingApproval() })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Action failed.')
@@ -232,7 +253,7 @@ const apconMutation = useMutation({
     apconingCampaign.value = null
     apconSubmissionId.value = ''
     toast.success('APCON approval recorded.')
-    qc.invalidateQueries({ queryKey: ['campaigns-pending-approval'] })
+    qc.invalidateQueries({ queryKey: qk.campaignsPendingApproval() })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Action failed.')

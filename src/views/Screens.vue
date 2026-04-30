@@ -173,14 +173,19 @@
     <!-- Table View -->
     <div v-else class="page-body">
       <div class="card overflow-hidden">
-        <div v-if="screensQuery.isLoading.value" class="p-6 fg2 text-sm">Loading screens…</div>
-        <div
+        <RowSkeleton v-if="screensQuery.isLoading.value" :count="6" />
+        <ErrorState
           v-else-if="screensQuery.error.value"
-          class="p-6 text-sm"
-          style="color: var(--danger-500)"
-        >
-          {{ screensQuery.error.value?.message || 'Could not load screens.' }}
-        </div>
+          title="Could not load screens"
+          :message="screensQuery.error.value?.message"
+          :on-retry="screensQuery.refetch"
+        />
+        <EmptyState
+          v-else-if="!screens.length"
+          icon="ph-monitor"
+          title="No screens deployed yet"
+          message="Screens come online once a host completes pairing. Pending invites will surface here when they activate."
+        />
         <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
@@ -195,9 +200,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!screens.length">
-              <td colspan="8" class="p-6 fg2 text-center text-sm">No screens deployed yet.</td>
-            </tr>
             <tr
               v-for="screen in screens"
               :key="screen.id"
@@ -248,9 +250,15 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+
 import { adminScreensApi } from '../api/screens'
 import { useToastStore } from '../stores/toast'
 import { fmt } from '../utils/format'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const toast = useToastStore()
 const qc = useQueryClient()
@@ -259,16 +267,11 @@ const view = ref('table')
 const selectedPin = ref(null)
 
 const screensQuery = useQuery({
-  queryKey: ['admin', 'screens'],
+  queryKey: qk.screens(),
   queryFn: () => adminScreensApi.list(),
 })
 
-const screens = computed(() => {
-  const raw = screensQuery.data.value
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  return raw.data || raw.items || raw.screens || []
-})
+const screens = computed(() => extractList(screensQuery.data.value, 'screens'))
 
 const statusCounts = computed(() => {
   const counts = { active: 0, degraded: 0, offline: 0 }
@@ -313,7 +316,7 @@ async function onPause(screen) {
   try {
     await adminScreensApi.pause(screen.id)
     toast.success(`${screen.id} paused.`)
-    await qc.invalidateQueries({ queryKey: ['admin', 'screens'] })
+    await qc.invalidateQueries({ queryKey: qk.screens() })
   } catch (err) {
     if (!err?.needsReauth) toast.error(err?.message || 'Pause failed.')
   } finally {
@@ -326,7 +329,7 @@ async function onResume(screen) {
   try {
     await adminScreensApi.resume(screen.id)
     toast.success(`${screen.id} resumed.`)
-    await qc.invalidateQueries({ queryKey: ['admin', 'screens'] })
+    await qc.invalidateQueries({ queryKey: qk.screens() })
   } catch (err) {
     if (!err?.needsReauth) toast.error(err?.message || 'Resume failed.')
   } finally {

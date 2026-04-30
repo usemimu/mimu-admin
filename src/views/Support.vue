@@ -38,17 +38,26 @@
         </button>
       </div>
 
-      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading tickets…</span>
+      <div v-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="6" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load tickets: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load tickets"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
-      <div v-else-if="tickets.length === 0" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">No tickets match the current filters.</span>
+      <div v-else-if="tickets.length === 0" class="card">
+        <EmptyState
+          icon="ph-chat-centered-dots"
+          title="No tickets match"
+          message="Either nothing's in the inbox, or your filters are too tight. Clear filters to see everything."
+          cta-label="Clear filters"
+          @cta="clearFilters"
+        />
       </div>
 
       <div v-else class="card overflow-hidden">
@@ -111,7 +120,12 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
+
 import { supportApi } from '../api/support'
+import { qk } from '../lib/queryKeys'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const router = useRouter()
 
@@ -137,7 +151,7 @@ const params = computed(() => ({
   priority: filters.value.priority?.join(',') || undefined,
 }))
 
-const queryKey = computed(() => ['support-tickets', params.value])
+const queryKey = computed(() => qk.tickets(params.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => supportApi.listTickets(params.value),

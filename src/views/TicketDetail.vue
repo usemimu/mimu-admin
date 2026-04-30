@@ -168,8 +168,10 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { supportApi } from '../api/support'
 import { useToastStore } from '../stores/toast'
+import { qk } from '../lib/queryKeys'
 
 const route = useRoute()
 const qc = useQueryClient()
@@ -183,7 +185,7 @@ const showClosePanel = ref(false)
 const closeReason = ref('resolved')
 const closeNotes = ref('')
 
-const queryKey = computed(() => ['ticket-detail', ticketId.value])
+const queryKey = computed(() => qk.ticketDetail(ticketId.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => supportApi.ticketDetail(ticketId.value),
@@ -221,7 +223,7 @@ const replyMutation = useMutation({
     replyText.value = ''
     isInternalNote.value = false
     toast.success('Reply sent.')
-    qc.invalidateQueries({ queryKey: ['ticket-detail', ticketId.value] })
+    qc.invalidateQueries({ queryKey: qk.ticketDetail(ticketId.value) })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Reply failed.')
@@ -233,8 +235,8 @@ const closeMutation = useMutation({
   onSuccess: () => {
     showClosePanel.value = false
     toast.success('Ticket closed.')
-    qc.invalidateQueries({ queryKey: ['ticket-detail', ticketId.value] })
-    qc.invalidateQueries({ queryKey: ['support-tickets'] })
+    qc.invalidateQueries({ queryKey: qk.ticketDetail(ticketId.value) })
+    qc.invalidateQueries({ queryKey: ['admin', 'support', 'tickets'] })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Close failed.')

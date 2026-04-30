@@ -31,17 +31,26 @@
         <button class="btn ghost sm" @click="clearFilters"><i class="ph ph-x"></i> Clear</button>
       </div>
 
-      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading advertisers…</span>
+      <div v-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="6" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load advertisers: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load advertisers"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
-      <div v-else-if="advertisers.length === 0" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">No advertisers match the current filters.</span>
+      <div v-else-if="advertisers.length === 0" class="card">
+        <EmptyState
+          icon="ph-megaphone"
+          title="No advertisers match"
+          message="Tighten or clear filters to widen the search."
+          cta-label="Clear filters"
+          @cta="clearFilters"
+        />
       </div>
 
       <div v-else class="card overflow-hidden">
@@ -104,7 +113,12 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
+
 import { advertisersApi } from '../api/advertisers'
+import { qk } from '../lib/queryKeys'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const router = useRouter()
 
@@ -123,7 +137,7 @@ const filters = ref({
   limit: 50,
 })
 
-const queryKey = computed(() => ['advertisers', filters.value])
+const queryKey = computed(() => qk.advertisers(filters.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => advertisersApi.list(filters.value),

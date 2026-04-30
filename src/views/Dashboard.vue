@@ -99,8 +99,11 @@
         </div>
       </div>
 
-      <!-- Recent admin activity (audit log) -->
-      <div class="card">
+      <!-- Recent admin activity (audit log). Hidden entirely for roles
+           without `audit.view` — there's no value in showing a "you can't
+           see this" placeholder, and the query above is gated so we
+           never fire the 403 in the first place. -->
+      <div v-if="canSeeAuditLog" class="card">
         <div class="card-head">
           <div class="card-title">Recent admin activity</div>
           <div class="spacer"></div>
@@ -142,33 +145,52 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
+
 import { monitoringApi } from '../api/monitoring'
+import { qk } from '../lib/queryKeys'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
+import { PERM } from '../lib/permissions'
 
 const router = useRouter()
 const qc = useQueryClient()
+const me = useCurrentAdmin()
+
+// `monitoring.view` is granted to every role today, but gate explicitly
+// so a future role split doesn't silently 403 the entire dashboard.
+const canSeeDashboard = computed(() => me.can(PERM.MONITORING_VIEW))
+const canSeeAuditLog = computed(() => me.can(PERM.AUDIT_VIEW))
 
 const dashboardQuery = useQuery({
-  queryKey: ['monitoring-dashboard'],
+  queryKey: qk.dashboard(),
   queryFn: () => monitoringApi.dashboard(),
+  enabled: canSeeDashboard,
   refetchInterval: 60_000,
 })
 
+// Same key the sidebar uses — both views share the cache and only
+// one network round-trip per 30s window.
 const queueQuery = useQuery({
-  queryKey: ['monitoring-queue-depths'],
+  queryKey: qk.queueDepths(),
   queryFn: () => monitoringApi.queueDepths(),
+  enabled: canSeeDashboard,
   refetchInterval: 30_000,
 })
 
+// Audit log is restricted (support_agent + vetting_agent + field_ops
+// don't have `audit.view`). Skip the query for them so we don't
+// generate noisy 403s on every dashboard load. The template branches
+// on `canSeeAuditLog` to hide the panel.
 const auditQuery = useQuery({
-  queryKey: ['monitoring-audit-recent'],
+  queryKey: qk.auditLog({ limit: 8, offset: 0 }),
   queryFn: () => monitoringApi.auditLog({ limit: 8, offset: 0 }),
+  enabled: canSeeAuditLog,
   refetchInterval: 30_000,
 })
 
 function refreshAll() {
-  qc.invalidateQueries({ queryKey: ['monitoring-dashboard'] })
-  qc.invalidateQueries({ queryKey: ['monitoring-queue-depths'] })
-  qc.invalidateQueries({ queryKey: ['monitoring-audit-recent'] })
+  qc.invalidateQueries({ queryKey: qk.dashboard() })
+  qc.invalidateQueries({ queryKey: qk.queueDepths() })
+  qc.invalidateQueries({ queryKey: qk.auditLog({ limit: 8, offset: 0 }) })
 }
 
 const nowLabel = computed(() =>
@@ -286,11 +308,20 @@ const systems = computed(() => {
       status: dashboardQuery.error.value ? 'error' : 'ok',
       detail: dashboardQuery.error.value ? 'unreachable' : 'reachable',
     },
-    {
-      name: 'Audit log',
-      status: auditQuery.error.value ? 'error' : 'ok',
-      detail: auditQuery.error.value ? 'unreachable' : `${auditQuery.data.value?.logs?.length ?? 0} entries fetched`,
-    },
+    // Only report audit-log health for roles that actually probe it;
+    // for everyone else the query is disabled and a "no data, no
+    // error" check would render misleading green ticks.
+    ...(canSeeAuditLog.value
+      ? [
+          {
+            name: 'Audit log',
+            status: auditQuery.error.value ? 'error' : 'ok',
+            detail: auditQuery.error.value
+              ? 'unreachable'
+              : `${auditQuery.data.value?.logs?.length ?? 0} entries fetched`,
+          },
+        ]
+      : []),
   ]
 })
 

@@ -13,14 +13,19 @@
 
     <div class="page-body">
       <div class="card overflow-hidden">
-        <div v-if="fraudQuery.isLoading.value" class="p-6 fg2 text-sm">Loading…</div>
-        <div
+        <RowSkeleton v-if="fraudQuery.isLoading.value" :count="6" />
+        <ErrorState
           v-else-if="fraudQuery.error.value"
-          class="p-6 text-sm"
-          style="color: var(--danger-500)"
-        >
-          {{ fraudQuery.error.value?.message || 'Could not load fraud queue.' }}
-        </div>
+          title="Could not load fraud queue"
+          :message="fraudQuery.error.value?.message"
+          :on-retry="fraudQuery.refetch"
+        />
+        <EmptyState
+          v-else-if="!flags.length"
+          icon="ph-shield-check"
+          title="Queue is clear"
+          message="No fraud flags currently need review. Newly flagged items will appear here automatically."
+        />
         <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
@@ -34,11 +39,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!flags.length">
-              <td colspan="7" class="p-6 fg2 text-center text-sm">
-                Queue is clear.
-              </td>
-            </tr>
             <tr
               v-for="flag in flags"
               :key="flag.id"
@@ -76,13 +76,30 @@
               </td>
               <td class="p-3 mono fg2 text-xs">{{ relTime(flag.detectedAt || flag.createdAt) }}</td>
               <td class="p-3 text-right">
-                <button class="btn outline xs" :disabled="isBusy(flag.id)" @click="onClear(flag)">
+                <button
+                  v-if="me.can(PERM.FRAUD_VIEW)"
+                  class="btn outline xs"
+                  :disabled="isBusy(flag.id)"
+                  @click="onClear(flag)"
+                >
                   Clear
                 </button>
-                <button class="btn outline xs" style="margin-left: 6px" :disabled="isBusy(flag.id)" @click="onHold(flag)">
+                <button
+                  v-if="me.can(PERM.FRAUD_VIEW)"
+                  class="btn outline xs"
+                  style="margin-left: 6px"
+                  :disabled="isBusy(flag.id)"
+                  @click="onHold(flag)"
+                >
                   Hold
                 </button>
-                <button class="btn outline xs" style="margin-left: 6px; color: var(--danger-500)" :disabled="isBusy(flag.id)" @click="onConfirm(flag)">
+                <button
+                  v-if="me.can(PERM.FRAUD_CONFIRM)"
+                  class="btn outline xs"
+                  style="margin-left: 6px; color: var(--danger-500)"
+                  :disabled="isBusy(flag.id)"
+                  @click="onConfirm(flag)"
+                >
                   Confirm
                 </button>
               </td>
@@ -97,11 +114,20 @@
 <script setup>
 import { computed } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
+
 import { fraudApi } from '../api/fraud'
 import { useOptimisticRowMutation } from '../composables/useOptimisticRowMutation'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 import { fmt } from '../utils/format'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
+import { PERM } from '../lib/permissions'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
-const QUERY_KEY = ['admin', 'fraud', 'queue']
+const me = useCurrentAdmin()
+const QUERY_KEY = qk.fraudQueue()
 
 const fraudQuery = useQuery({
   queryKey: QUERY_KEY,
@@ -110,12 +136,7 @@ const fraudQuery = useQuery({
   refetchInterval: 60_000,
 })
 
-const flags = computed(() => {
-  const raw = fraudQuery.data.value
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  return raw.data || raw.items || raw.flags || []
-})
+const flags = computed(() => extractList(fraudQuery.data.value, 'flags'))
 
 function iconForType(t) {
   if (t === 'screen') return 'ph-monitor'

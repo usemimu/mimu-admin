@@ -17,17 +17,24 @@
     </div>
 
     <div class="page-body">
-      <div v-if="!advertiserId" class="card" style="padding: 24px;">
-        <span class="fg2">No advertiser id provided. Pass <code>?id=…</code> in the URL.</span>
+      <div v-if="!advertiserId" class="card">
+        <EmptyState
+          icon="ph-megaphone"
+          title="No advertiser selected"
+          message="Pass ?id=… in the URL or open one from the advertiser list."
+        />
       </div>
 
-      <div v-else-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading advertiser…</span>
+      <div v-else-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="6" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load advertiser: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">Retry</button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load advertiser"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
       <div v-else style="display: grid; grid-template-columns: 1fr 360px; gap: 24px">
@@ -55,7 +62,7 @@
 
           <div class="card" style="padding: 20px">
             <h3 style="margin: 0 0 12px;">Wallet &amp; spend</h3>
-            <div class="flex" style="gap: 24px;">
+            <div class="flex" style="gap: 24px; margin-bottom: 16px;">
               <div>
                 <div class="fg2 text-xs">Wallet balance</div>
                 <div class="mono" style="font-size: 18px; font-weight: 600;">{{ formatNaira(walletBalanceKobo) }}</div>
@@ -68,6 +75,111 @@
                 <div class="fg2 text-xs">Total topups</div>
                 <div class="mono" style="font-size: 14px;">{{ advertiser?.totalTopupsCount ?? 0 }}</div>
               </div>
+              <div>
+                <div class="fg2 text-xs">First topup</div>
+                <div class="mono text-xs">{{ formatDate(advertiser?.firstTopupAt) }}</div>
+              </div>
+            </div>
+            <h4 class="fg2 text-xs" style="text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 6px;">Recent ledger entries</h4>
+            <div v-if="recentTransactions.length === 0" class="fg2 text-xs">
+              No wallet activity yet.
+            </div>
+            <table v-else class="w-full text-xs">
+              <tbody>
+                <tr
+                  v-for="t in recentTransactions.slice(0, 8)"
+                  :key="t.id"
+                  style="border-top: 1px solid var(--border);"
+                >
+                  <td class="py-2 pr-2">
+                    <span class="pill sm" :class="t.direction === 'credit' ? 'pill-active' : 'pill-pending'">
+                      {{ t.direction === 'credit' ? 'CR' : 'DR' }}
+                    </span>
+                  </td>
+                  <td class="py-2 pr-2 fg2 truncate" style="max-width: 280px;">
+                    {{ t.description || '—' }}
+                  </td>
+                  <td class="py-2 pr-2 mono text-right">
+                    {{ formatNaira(t.amountKobo || (t.direction === 'credit' ? t.creditKobo : t.debitKobo)) }}
+                  </td>
+                  <td class="py-2 mono fg3 text-[11px] text-right" style="white-space: nowrap;">
+                    {{ formatDate(t.timestamp) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Personal KYC (Dojah) — distinct from the business
+               approval gate (`kycStatus`) the right-rail card flips. -->
+          <div class="card" style="padding: 20px">
+            <h3 style="margin: 0 0 12px;">Personal KYC (Dojah)</h3>
+            <div class="flex" style="gap: 24px; margin-bottom: 12px;">
+              <div>
+                <div class="fg2 text-xs">Status</div>
+                <div>
+                  <span class="pill sm" :class="advertiser?.kycCompleteAt ? 'pill-active' : 'pill-pending'">
+                    {{ advertiser?.kycCompleteAt ? 'Verified' : 'Not verified' }}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <div class="fg2 text-xs">Verified at</div>
+                <div class="mono text-xs">{{ formatDate(advertiser?.kycCompleteAt) }}</div>
+              </div>
+              <div>
+                <div class="fg2 text-xs">Latest method</div>
+                <div class="text-xs">{{ kycVerifications[0]?.method || '—' }}</div>
+              </div>
+            </div>
+            <div v-if="kycVerifications.length === 0" class="fg2 text-xs">
+              No verification attempts on record yet.
+            </div>
+            <div v-else>
+              <h4 class="fg2 text-xs" style="text-transform: uppercase; letter-spacing: 0.05em; margin: 12px 0 6px;">
+                Verification history
+              </h4>
+              <table class="w-full text-xs">
+                <tbody>
+                  <tr
+                    v-for="v in kycVerifications.slice(0, 6)"
+                    :key="v.id"
+                    style="border-top: 1px solid var(--border);"
+                  >
+                    <td class="py-2 pr-2">
+                      <span class="pill sm" :class="kycRowPill(v.status)">{{ v.status }}</span>
+                    </td>
+                    <td class="py-2 pr-2 fg2">{{ v.method || '—' }}</td>
+                    <td class="py-2 pr-2 mono text-[11px] fg3 truncate" style="max-width: 200px;">
+                      {{ v.referenceId }}
+                    </td>
+                    <td class="py-2 mono fg3 text-[11px] text-right" style="white-space: nowrap;">
+                      {{ formatDate(v.verifiedAt || v.failedAt || v.initiatedAt) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <details
+                v-if="kycVerifications[0]?.kycObject"
+                class="text-xs"
+                style="margin-top: 12px;"
+              >
+                <summary class="fg2 cursor-pointer">
+                  View latest Dojah payload (raw JSON)
+                </summary>
+                <pre
+                  style="
+                    background: var(--bg-sunken);
+                    padding: 12px;
+                    border-radius: 6px;
+                    margin-top: 8px;
+                    overflow: auto;
+                    max-height: 280px;
+                    font-family: var(--f-mono);
+                    font-size: 11px;
+                  "
+                >{{ JSON.stringify(kycVerifications[0].kycObject, null, 2) }}</pre>
+              </details>
             </div>
           </div>
 
@@ -211,8 +323,13 @@
 import { computed, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { advertisersApi } from '../api/advertisers'
 import { useToastStore } from '../stores/toast'
+import { qk } from '../lib/queryKeys'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const route = useRoute()
 const qc = useQueryClient()
@@ -220,7 +337,7 @@ const toast = useToastStore()
 
 const advertiserId = computed(() => (route.query.id ? String(route.query.id) : ''))
 
-const queryKey = computed(() => ['advertiser-detail', advertiserId.value])
+const queryKey = computed(() => qk.advertiserDetail(advertiserId.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => advertisersApi.detail(advertiserId.value),
@@ -230,6 +347,8 @@ const { data, isLoading, error, refetch } = useQuery({
 const advertiser = computed(() => data.value?.advertiser)
 const user = computed(() => data.value?.user)
 const walletBalanceKobo = computed(() => data.value?.walletBalanceKobo)
+const recentTransactions = computed(() => data.value?.recentTransactions ?? [])
+const kycVerifications = computed(() => data.value?.kycVerifications ?? [])
 const campaigns = computed(() => data.value?.campaigns ?? [])
 const fraudFlags = computed(() => data.value?.fraudFlags ?? [])
 
@@ -249,8 +368,8 @@ const approveKycMutation = useMutation({
   onSuccess: () => {
     kycNotes.value = ''
     toast.success('KYC approved.')
-    qc.invalidateQueries({ queryKey: ['advertiser-detail', advertiserId.value] })
-    qc.invalidateQueries({ queryKey: ['advertisers'] })
+    qc.invalidateQueries({ queryKey: qk.advertiserDetail(advertiserId.value) })
+    qc.invalidateQueries({ queryKey: ['admin', 'advertisers'] })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'KYC approval failed.')
@@ -262,8 +381,8 @@ const suspendMutation = useMutation({
   onSuccess: () => {
     suspendReason.value = ''
     toast.success('Advertiser suspended.')
-    qc.invalidateQueries({ queryKey: ['advertiser-detail', advertiserId.value] })
-    qc.invalidateQueries({ queryKey: ['advertisers'] })
+    qc.invalidateQueries({ queryKey: qk.advertiserDetail(advertiserId.value) })
+    qc.invalidateQueries({ queryKey: ['admin', 'advertisers'] })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Suspend failed.')
@@ -274,8 +393,8 @@ const reactivateMutation = useMutation({
   mutationFn: () => advertisersApi.reactivate(advertiserId.value),
   onSuccess: () => {
     toast.success('Advertiser reactivated.')
-    qc.invalidateQueries({ queryKey: ['advertiser-detail', advertiserId.value] })
-    qc.invalidateQueries({ queryKey: ['advertisers'] })
+    qc.invalidateQueries({ queryKey: qk.advertiserDetail(advertiserId.value) })
+    qc.invalidateQueries({ queryKey: ['admin', 'advertisers'] })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Reactivate failed.')
@@ -293,12 +412,19 @@ const adjustMutation = useMutation({
     adjustForm.amountKobo = ''
     adjustForm.reason = ''
     toast.success('Adjustment applied.')
-    qc.invalidateQueries({ queryKey: ['advertiser-detail', advertiserId.value] })
+    qc.invalidateQueries({ queryKey: qk.advertiserDetail(advertiserId.value) })
   },
   onError: (err) => {
     if (!err?.needsReauth) toast.error(err?.message || 'Adjustment failed.')
   },
 })
+
+function kycRowPill(status) {
+  if (status === 'verified') return 'pill-active'
+  if (status === 'failed') return 'pill-failed'
+  if (status === 'expired') return 'pill-hold'
+  return 'pill-pending'
+}
 
 function onAdjust() {
   if (!canAdjust.value) return

@@ -8,7 +8,11 @@
         <button class="btn outline sm" @click="refetch">
           <i class="ph ph-arrow-clockwise"></i> Refresh
         </button>
-        <button class="btn primary sm" @click="$router.push('/host-invite')">
+        <button
+          v-if="canInvite"
+          class="btn primary sm"
+          @click="$router.push('/host-invite')"
+        >
           <i class="ph ph-plus"></i> New invite
         </button>
       </div>
@@ -16,10 +20,21 @@
 
     <div class="page-body">
       <div class="card overflow-hidden">
-        <div v-if="isLoading" class="p-6 fg2 text-sm">Loading hosts…</div>
-        <div v-else-if="error" class="p-6 text-sm" style="color: var(--danger-500)">
-          {{ error?.message || 'Could not load hosts.' }}
-        </div>
+        <RowSkeleton v-if="isLoading" :count="6" />
+        <ErrorState
+          v-else-if="error"
+          title="Could not load hosts"
+          :message="error?.message"
+          :on-retry="refetch"
+        />
+        <EmptyState
+          v-else-if="!hosts.length"
+          icon="ph-storefront"
+          title="No hosts yet"
+          message="Hosts onboard via WhatsApp invites — start one to get a venue paired and earning."
+          :cta-label="canInvite ? 'Create invite' : ''"
+          @cta="$router.push('/host-invite')"
+        />
         <table v-else class="w-full">
           <thead class="border-b border-[var(--border)]">
             <tr class="text-left text-xs">
@@ -33,11 +48,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!hosts.length">
-              <td colspan="7" class="p-6 fg2 text-center text-sm">
-                No hosts yet — create an invite to onboard one.
-              </td>
-            </tr>
             <tr
               v-for="host in hosts"
               :key="host.id"
@@ -76,26 +86,27 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery } from '@tanstack/vue-query'
+
 import { hostsApi } from '../api/hosts'
 import { fmt } from '../utils/format'
+import { qk } from '../lib/queryKeys'
+import { extractList } from '../lib/response'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
+import { PERM } from '../lib/permissions'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const router = useRouter()
+const me = useCurrentAdmin()
+const canInvite = computed(() => me.can(PERM.HOSTS_CREATE_INVITE))
 
 const { data, isLoading, error, refetch } = useQuery({
-  queryKey: ['admin', 'hosts'],
+  queryKey: qk.hosts(),
   queryFn: () => hostsApi.list(),
 })
 
-// Response shape isn't strictly documented; tolerate either an array, a
-// `{ data: [...] }` envelope, or a `{ items: [...], total }` envelope.
-const hosts = computed(() => {
-  const raw = data.value
-  if (!raw) return []
-  if (Array.isArray(raw)) return raw
-  if (Array.isArray(raw.data)) return raw.data
-  if (Array.isArray(raw.items)) return raw.items
-  return []
-})
+const hosts = computed(() => extractList(data.value, 'hosts'))
 
 const statusSummary = computed(() => {
   const total = hosts.value.length

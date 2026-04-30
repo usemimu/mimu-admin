@@ -812,6 +812,32 @@
     @apply cursor-pointer;
   }
 
+  /* Filter bar — horizontal row of read-only chips ("Status: Any") plus
+     trailing action buttons. Used on Support/Advertisers/Audit/Campaigns/
+     AdminUsers. The class was referenced everywhere but never defined,
+     so chips were mashing together with zero gap. */
+  .filterbar {
+    @apply flex items-center gap-2 flex-wrap;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 text-xs leading-none whitespace-nowrap rounded-md border px-2.5 py-1.5;
+    color: var(--fg-2);
+    border-color: var(--border);
+    background: var(--bg);
+  }
+  .chip strong {
+    @apply font-semibold;
+    color: var(--fg);
+  }
+  /* When a chip carries an active value (vs. "Any") it lights up so the
+     user can see which filters are non-default at a glance. */
+  .chip.active {
+    color: var(--fg);
+    border-color: var(--clay-500);
+    background: color-mix(in srgb, var(--clay-500) 8%, transparent);
+  }
+
   /* Environment banner */
   .env-banner {
     @apply bg-gold-500 text-neutral-900 font-bold text-[11px] uppercase text-center py-1;

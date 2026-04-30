@@ -36,19 +36,24 @@
         </div>
       </div>
 
-      <div v-if="isLoading" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">Loading audit log…</span>
+      <div v-if="isLoading" class="card overflow-hidden">
+        <RowSkeleton :count="8" />
       </div>
 
-      <div v-else-if="error" class="card" style="padding: 24px;">
-        <div style="color: var(--danger-500);">Failed to load audit log: {{ error.message }}</div>
-        <button class="btn sm outline" style="margin-top: 8px;" @click="refetch()">
-          Retry
-        </button>
+      <div v-else-if="error" class="card">
+        <ErrorState
+          title="Could not load audit log"
+          :message="error.message"
+          :on-retry="refetch"
+        />
       </div>
 
-      <div v-else-if="entries.length === 0" class="card" style="padding: 24px; text-align: center;">
-        <span class="fg2">No audit entries match the current filters.</span>
+      <div v-else-if="entries.length === 0" class="card">
+        <EmptyState
+          icon="ph-scroll"
+          title="No audit entries match"
+          message="Widen the date range or clear filters to see admin activity."
+        />
       </div>
 
       <div v-else class="card">
@@ -130,7 +135,12 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
+
 import { monitoringApi } from '../api/monitoring'
+import { qk } from '../lib/queryKeys'
+import EmptyState from '../components/EmptyState.vue'
+import ErrorState from '../components/ErrorState.vue'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const expandedIndex = ref(-1)
 const resourceIdInput = ref('')
@@ -151,7 +161,7 @@ function defaultFromDate() {
   return d.toISOString()
 }
 
-const queryKey = computed(() => ['audit-log', filters.value])
+const queryKey = computed(() => qk.auditLog(filters.value))
 const { data, isLoading, error, refetch } = useQuery({
   queryKey,
   queryFn: () => monitoringApi.auditLog(filters.value),

@@ -30,12 +30,23 @@
       </button>
 
       <div class="relative">
-        <div class="flex items-center gap-2 px-1.5 cursor-pointer hover:bg-[var(--bg-hover)] rounded" @click="showProfileMenu = !showProfileMenu">
+        <div
+          class="flex items-center gap-2 px-1.5 cursor-pointer hover:bg-[var(--bg-hover)] rounded"
+          @click="showProfileMenu = !showProfileMenu"
+        >
+          <img
+            v-if="me.avatarUrl.value"
+            :src="me.avatarUrl.value"
+            :alt="me.displayName.value"
+            class="avatar-img"
+            referrerpolicy="no-referrer"
+          />
           <div
+            v-else
             class="avatar"
             :style="{ width: '24px', height: '24px', fontSize: '10px', borderRadius: '6px' }"
           >
-            {{ getInitials(MOCK.user.name) }}
+            {{ me.initials.value }}
           </div>
           <i class="ph ph-caret-down text-xs text-[var(--fg-3)]"></i>
         </div>
@@ -47,20 +58,25 @@
           class="absolute right-0 top-full mt-1 w-56 bg-[var(--bg-raised)] border border-[var(--border)] rounded-lg shadow-lg z-50"
         >
           <div class="p-3 border-b border-[var(--border)]">
-            <div class="font-semibold text-sm">{{ MOCK.user.name }}</div>
-            <div class="text-xs text-[var(--fg-3)]">{{ MOCK.user.email }}</div>
-            <div class="pill pill-neutral sm mt-1">{{ MOCK.user.role.replace('_', ' ') }}</div>
+            <div class="font-semibold text-sm">{{ me.displayName.value }}</div>
+            <div class="text-xs text-[var(--fg-3)]">{{ me.email.value }}</div>
+            <div v-if="me.roleLabel.value" class="pill pill-neutral sm mt-1">
+              {{ me.roleLabel.value }}
+            </div>
           </div>
           <div class="p-1">
-            <button class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm" @click="navigateToSettings">
+            <button
+              class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm"
+              @click="navigateToSettings"
+            >
               <i class="ph ph-gear-six"></i> Settings
-            </button>
-            <button class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm" @click="navigateToProfile">
-              <i class="ph ph-user"></i> Profile
             </button>
           </div>
           <div class="p-1 border-t border-[var(--border)]">
-            <button class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm text-danger-500" @click="handleLogout">
+            <button
+              class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm text-danger-500"
+              @click="handleLogout"
+            >
               <i class="ph ph-sign-out"></i> Logout
             </button>
           </div>
@@ -76,37 +92,25 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMockData } from '../composables/useMockData'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 
 const router = useRouter()
 
 defineProps({
-  theme: String
+  theme: String,
 })
 
 const emit = defineEmits(['toggle-theme', 'toggle-sidebar', 'open-cmdk', 'logout'])
 
-const { MOCK } = useMockData()
+// Live identity. The composable wraps the auth Pinia store so this
+// stays reactive when /me refreshes (heartbeat, post-login, etc.).
+const me = useCurrentAdmin()
 
 const showProfileMenu = ref(false)
-
-const getInitials = (name) => {
-  return name
-    .split(' ')
-    .map(w => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
-}
 
 const navigateToSettings = () => {
   showProfileMenu.value = false
   router.push('/settings')
-}
-
-const navigateToProfile = () => {
-  showProfileMenu.value = false
-  // Profile page not implemented yet
 }
 
 const handleLogout = () => {
@@ -114,3 +118,12 @@ const handleLogout = () => {
   emit('logout')
 }
 </script>
+
+<style scoped>
+.avatar-img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+</style>
