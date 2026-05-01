@@ -43,6 +43,11 @@ const routes = [
   { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue'), meta: { requiresAuth: true } },
   { path: '/shortcuts', name: 'shortcuts', component: () => import('./views/Shortcuts.vue'), meta: { requiresAuth: true } },
   { path: '/components', name: 'components', component: () => import('./views/Components.vue'), meta: { requiresAuth: true } },
+
+  // Catch-all 404 — shown briefly, then auto-redirected to `/`. Not
+  // auth-gated so an unauthenticated user hitting a bad URL still sees
+  // the 404 (the auth guard takes over once the redirect lands on `/`).
+  { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./views/NotFound.vue') },
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })
