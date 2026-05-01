@@ -159,27 +159,22 @@
                   </tr>
                 </tbody>
               </table>
-              <details
+              <div
                 v-if="kycVerifications[0]?.kycObject"
-                class="text-xs"
-                style="margin-top: 12px;"
+                style="margin-top: 16px;"
               >
-                <summary class="fg2 cursor-pointer">
-                  View latest Dojah payload (raw JSON)
-                </summary>
-                <pre
+                <h4
+                  class="fg2 text-xs"
                   style="
-                    background: var(--bg-sunken);
-                    padding: 12px;
-                    border-radius: 6px;
-                    margin-top: 8px;
-                    overflow: auto;
-                    max-height: 280px;
-                    font-family: var(--f-mono);
-                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin: 0 0 8px;
                   "
-                >{{ JSON.stringify(kycVerifications[0].kycObject, null, 2) }}</pre>
-              </details>
+                >
+                  Latest verification details
+                </h4>
+                <KycPayloadCard :payload="kycVerifications[0].kycObject" />
+              </div>
             </div>
           </div>
 
@@ -330,6 +325,7 @@ import { qk } from '../lib/queryKeys'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
 import RowSkeleton from '../components/RowSkeleton.vue'
+import KycPayloadCard from '../components/KycPayloadCard.vue'
 
 const route = useRoute()
 const qc = useQueryClient()

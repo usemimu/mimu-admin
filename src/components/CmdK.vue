@@ -55,71 +55,51 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMockData } from '../composables/useMockData'
+import { useQueueDepths } from '../composables/useQueueDepths'
+import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 
 const emit = defineEmits(['close'])
 const router = useRouter()
-const { MOCK } = useMockData()
+
+// Real-time queue counts shared with the Sidebar/Dashboard. The
+// palette is only opened from authenticated views, so polling is
+// already paid for elsewhere — just read the same cache.
+const me = useCurrentAdmin()
+const { counts: queueCounts } = useQueueDepths({ enabled: me.isAuthenticated })
 
 const query = ref('')
 const focused = ref(0)
 const searchInput = ref(null)
 
-// Build searchable items
-const allItems = computed(() => {
-  const items = []
-
-  // Pages
-  items.push(
-    { type: 'page', title: 'Dashboard', subtitle: 'Operations overview', icon: 'ph-house', route: '/' },
-    { type: 'page', title: 'Vetting Queue', subtitle: MOCK.queues.vetting + ' pending', icon: 'ph-eye', route: '/vetting', badge: MOCK.queues.vetting },
-    { type: 'page', title: 'Fraud Review', subtitle: MOCK.queues.fraud + ' open', icon: 'ph-shield-warning', route: '/fraud', badge: MOCK.queues.fraud, color: 'var(--danger-500)' },
-    { type: 'page', title: 'Payouts', subtitle: MOCK.queues.payouts + ' pending', icon: 'ph-bank', route: '/payouts', badge: MOCK.queues.payouts },
-    { type: 'page', title: 'Support Inbox', subtitle: MOCK.queues.support + ' open', icon: 'ph-chat-centered-dots', route: '/support', badge: MOCK.queues.support },
-    { type: 'page', title: 'Hosts', subtitle: 'Host management', icon: 'ph-storefront', route: '/hosts' },
-    { type: 'page', title: 'Screens', subtitle: 'Screen inventory', icon: 'ph-monitor', route: '/screens' },
-    { type: 'page', title: 'Advertisers', subtitle: 'Advertiser management', icon: 'ph-megaphone', route: '/advertisers' },
-    { type: 'page', title: 'Audit Log', subtitle: 'Activity history', icon: 'ph-scroll', route: '/audit' }
-  )
-
-  // Hosts
-  MOCK.hosts.forEach(host => {
-    items.push({
-      type: 'host',
-      title: host.name,
-      subtitle: host.lga + ' · ' + host.cat + ' · ' + host.id,
-      icon: 'ph-storefront',
-      route: '/hosts',
-      searchTerms: host.name + ' ' + host.lga + ' ' + host.cat + ' ' + host.id
-    })
-  })
-
-  // Advertisers
-  MOCK.advertisers.forEach(adv => {
-    items.push({
-      type: 'advertiser',
-      title: adv.name,
-      subtitle: adv.lga + ' · ' + adv.cat + ' · ' + adv.id,
-      icon: 'ph-megaphone',
-      route: '/advertisers',
-      searchTerms: adv.name + ' ' + adv.lga + ' ' + adv.cat + ' ' + adv.id
-    })
-  })
-
-  // Screens
-  MOCK.screens.forEach(screen => {
-    items.push({
-      type: 'screen',
-      title: screen.id,
-      subtitle: screen.host + ' · ' + screen.lga,
-      icon: 'ph-monitor',
-      route: '/screens',
-      searchTerms: screen.id + ' ' + screen.host + ' ' + screen.lga
-    })
-  })
-
-  return items
+// Page-level navigation only. Entity search (a specific host, screen
+// or advertiser) routes the user to the relevant list view where the
+// real filter UI lives — we don't pre-fetch the entire inventory
+// just to power a quick-jump palette.
+const PAGES = computed(() => {
+  const c = queueCounts.value
+  return [
+    { title: 'Dashboard', subtitle: 'Operations overview', icon: 'ph-house', route: '/' },
+    { title: 'Vetting queue', subtitle: countLabel(c.vetting, 'creative'), icon: 'ph-eye', route: '/vetting', badge: c.vetting || null },
+    { title: 'Fraud review', subtitle: countLabel(c.fraud, 'flag'), icon: 'ph-shield-warning', route: '/fraud', badge: c.fraud || null, color: c.fraud ? 'var(--danger-500)' : undefined },
+    { title: 'Payouts', subtitle: countLabel(c.payouts, 'payout'), icon: 'ph-bank', route: '/payouts', badge: c.payouts || null },
+    { title: 'Support inbox', subtitle: countLabel(c.support, 'ticket'), icon: 'ph-chat-centered-dots', route: '/support', badge: c.support || null },
+    { title: 'Campaigns', subtitle: 'Campaign vetting + APCON', icon: 'ph-flag', route: '/campaigns' },
+    { title: 'Hosts', subtitle: 'Host management', icon: 'ph-storefront', route: '/hosts' },
+    { title: 'Screens', subtitle: 'Screen inventory', icon: 'ph-monitor', route: '/screens' },
+    { title: 'Advertisers', subtitle: 'Advertiser management', icon: 'ph-megaphone', route: '/advertisers' },
+    { title: 'Admin users', subtitle: 'Roles, invites, suspend', icon: 'ph-users-three', route: '/admins' },
+    { title: 'Audit log', subtitle: 'Activity history', icon: 'ph-scroll', route: '/audit' },
+    { title: 'Settings', subtitle: 'Account + preferences', icon: 'ph-gear-six', route: '/settings' },
+  ].map((p) => ({ ...p, type: 'page', searchTerms: `${p.title} ${p.subtitle}` }))
 })
+
+function countLabel(n, noun) {
+  const num = Number(n) || 0
+  if (num === 0) return `No ${noun}s`
+  return `${num.toLocaleString('en-NG')} ${noun}${num === 1 ? '' : 's'} pending`
+}
+
+const allItems = computed(() => PAGES.value)
 
 const filteredResults = computed(() => {
   if (!query.value) return allItems.value.slice(0, 12)

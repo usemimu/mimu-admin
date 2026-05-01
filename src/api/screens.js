@@ -6,8 +6,29 @@ export const adminScreensApi = {
     const { data } = await http.get('/screens', { params })
     return data
   },
+  /**
+   * Create a new screen row. `hostId` is optional — leaving it null
+   * stages the screen for later assignment via reassign-host.
+   */
+  async create(body) {
+    const { data } = await http.post('/screens', body)
+    return data
+  },
   async detail(id) {
     const { data } = await http.get(`/screens/${id}`)
+    return data
+  },
+  /**
+   * Patch venue / location / spec / pricing fields. Status, host,
+   * install, and calibration have their own endpoints.
+   */
+  async update(id, body) {
+    const { data } = await http.patch(`/screens/${id}`, body)
+    return data
+  },
+  /** Mark a pending_install screen as live. Stamps installedAt/By. */
+  async activate(id, body = {}) {
+    const { data } = await http.post(`/screens/${id}/activate`, body)
     return data
   },
   async pause(id, body = {}) {

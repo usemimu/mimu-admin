@@ -106,36 +106,61 @@
       <div v-if="canSeeAuditLog" class="card">
         <div class="card-head">
           <div class="card-title">Recent admin activity</div>
+          <span v-if="recentActivity.length" class="fg2 text-xs" style="margin-left: 8px;">
+            last {{ recentActivity.length }}
+          </span>
           <div class="spacer"></div>
           <button class="btn ghost sm" @click="$router.push('/audit')">
             View all <i class="ph ph-arrow-right"></i>
           </button>
         </div>
-        <div v-if="auditQuery.isLoading.value" class="p-4 fg2 text-sm">Loading…</div>
-        <div v-else-if="recentActivity.length === 0" class="p-4 fg2 text-sm">
-          No recent admin actions.
+        <div v-if="auditQuery.isLoading.value" class="p-4">
+          <RowSkeleton :count="4" />
         </div>
-        <div v-else>
-          <div
-            v-for="(a, i) in recentActivity"
-            :key="a.id"
-            class="flex ac py-2.5 px-4"
-            :class="i > 0 ? 'border-t border-[var(--border)]' : ''"
-          >
-            <i class="ph text-base w-6 text-[var(--fg-2)]" :class="actionIcon(a.action)"></i>
-            <div class="flex-1 text-[13px]">
-              <strong>{{ a.adminName }}</strong>
-              <span class="fg2"> {{ verbLabel(a.action) }} </span>
-              <span v-if="a.targetResourceType" class="fg2">
-                · {{ a.targetResourceType }}
-              </span>
-              <span v-if="a.targetResourceId" class="mono fg2 text-[11px]" style="margin-left: 4px;">
-                {{ shortId(a.targetResourceId) }}
-              </span>
-            </div>
-            <div class="mono text-[11px] text-[var(--fg-3)]">{{ relTime(a.createdAt) }}</div>
+        <div v-else-if="recentActivity.length === 0" class="activity-empty">
+          <i class="ph ph-scroll" style="font-size: 24px; color: var(--fg-3); margin-bottom: 6px;"></i>
+          <div class="fg2 text-sm">No recent admin actions.</div>
+          <div class="fg2 text-xs" style="margin-top: 2px;">
+            Mutations (approve, suspend, role change, etc.) appear here.
           </div>
         </div>
+        <ul v-else class="activity-list">
+          <li
+            v-for="a in recentActivity"
+            :key="a.id"
+            class="activity-row"
+            :title="`${a.adminName} · ${a.action}`"
+            @click="$router.push('/audit')"
+          >
+            <div class="activity-avatar" :title="a.adminName">
+              {{ getInitials(a.adminName) }}
+            </div>
+            <div class="activity-body">
+              <div class="activity-line">
+                <span class="pill sm activity-method" :class="methodPill(a.method)">
+                  {{ a.method || methodFromAction(a.action) || '·' }}
+                </span>
+                <strong class="activity-action">{{ humanAction(a.action) }}</strong>
+                <span
+                  v-if="a.targetResourceType || a.targetResourceId"
+                  class="activity-target"
+                >
+                  <span v-if="a.targetResourceType">{{ a.targetResourceType.replace(/_/g, ' ') }}</span>
+                  <span v-if="a.targetResourceId" class="mono activity-target-id">
+                    {{ shortId(a.targetResourceId) }}
+                  </span>
+                </span>
+              </div>
+              <div class="activity-meta">
+                <span>{{ a.adminName }}</span>
+                <span v-if="a.path" class="activity-path">· {{ a.path }}</span>
+              </div>
+            </div>
+            <div class="activity-time" :title="formatExactTime(a.createdAt)">
+              {{ relTime(a.createdAt) }}
+            </div>
+          </li>
+        </ul>
       </div>
     </div>
   </div>
@@ -150,6 +175,7 @@ import { monitoringApi } from '../api/monitoring'
 import { qk } from '../lib/queryKeys'
 import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 import { PERM } from '../lib/permissions'
+import RowSkeleton from '../components/RowSkeleton.vue'
 
 const router = useRouter()
 const qc = useQueryClient()
@@ -352,6 +378,9 @@ const recentActivity = computed(() => {
     targetResourceType: row.log?.targetResourceType,
     targetResourceId: row.log?.targetResourceId,
     createdAt: row.log?.createdAt,
+    method: row.log?.metadata?.method,
+    path: row.log?.metadata?.path,
+    statusCode: row.log?.metadata?.statusCode,
   }))
 })
 
@@ -382,24 +411,141 @@ function relTime(iso) {
   return `${days}d`
 }
 
-function verbLabel(action) {
+// Same row helpers as Audit.vue. Kept inline rather than promoted to
+// a shared module — only two callsites and the cost of a tiny bit of
+// duplication is lower than another import boundary right now.
+function humanAction(action) {
   if (!action) return ''
-  const [resource, verb] = action.split('.')
+  const [resource, verb, ...rest] = action.split('.')
   if (!verb) return action
-  const past = verb.endsWith('e') ? `${verb}d` : `${verb}ed`
-  return `${past} ${resource}`
+  const verbStr = verb.replace(/_/g, ' ')
+  const tail = rest.length ? ` (${rest.join('.')})` : ''
+  return `${verbStr.charAt(0).toUpperCase()}${verbStr.slice(1)} · ${resource.replace(/_/g, ' ')}${tail}`
 }
 
-function actionIcon(action) {
-  if (!action) return 'ph-circle'
-  if (action.includes('reject')) return 'ph-x-circle text-danger-500'
-  if (action.includes('approve')) return 'ph-check-circle text-moss-500'
-  if (action.includes('hold') || action.includes('suspend')) return 'ph-pause-circle text-gold-500'
-  if (action.includes('refund')) return 'ph-arrow-counter-clockwise'
-  return 'ph-circle'
+function methodFromAction(action) {
+  if (!action) return ''
+  if (action.endsWith('.deleted')) return 'DELETE'
+  if (action.endsWith('.created')) return 'POST'
+  if (action.endsWith('.updated')) return 'PATCH'
+  return ''
+}
+
+function methodPill(method) {
+  if (!method) return 'pill-neutral'
+  if (method === 'POST') return 'pill-active'
+  if (method === 'PATCH' || method === 'PUT') return 'pill-pending'
+  if (method === 'DELETE') return 'pill-failed'
+  return 'pill-neutral'
+}
+
+function getInitials(name) {
+  if (!name) return '??'
+  return name
+    .split(' ')
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+}
+
+function formatExactTime(iso) {
+  if (!iso) return ''
+  return new Date(iso).toLocaleString('en-NG', {
+    timeZone: 'Africa/Lagos',
+  })
 }
 
 function goTo(path) {
   if (path) router.push(path)
 }
 </script>
+
+<style scoped>
+.activity-empty {
+  padding: 28px 16px;
+  text-align: center;
+}
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 16px;
+  align-items: center;
+  cursor: pointer;
+  border-top: 1px solid var(--border);
+  transition: background 0.12s;
+}
+.activity-row:first-child {
+  border-top: none;
+}
+.activity-row:hover {
+  background: var(--bg-hover);
+}
+.activity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--fg-2);
+  flex-shrink: 0;
+}
+.activity-body {
+  min-width: 0;
+}
+.activity-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 2px;
+  flex-wrap: wrap;
+}
+.activity-method {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+.activity-action {
+  color: var(--fg);
+}
+.activity-target {
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.activity-target-id {
+  font-size: 11px;
+  margin-left: 4px;
+  color: var(--fg-3);
+}
+.activity-meta {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-path {
+  margin-left: 6px;
+}
+.activity-time {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding-top: 2px;
+}
+</style>

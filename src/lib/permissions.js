@@ -15,17 +15,27 @@
 // Resource.action strings, identical to backend `PERMISSIONS` constants.
 export const PERM = {
   CREATIVES_VIEW: 'creatives.view',
+  CREATIVES_REVIEW: 'creatives.review',
   CREATIVES_APPROVE: 'creatives.approve',
   CREATIVES_REJECT: 'creatives.reject',
+  CREATIVES_APCON_SUBMIT: 'creatives.apcon_submit',
+  CREATIVES_APCON_MARK: 'creatives.apcon_mark',
 
   HOSTS_VIEW: 'hosts.view',
   HOSTS_CREATE_INVITE: 'hosts.create_invite',
+  HOSTS_UPDATE_PROFILE: 'hosts.update_profile',
+  HOSTS_UPDATE_BANK: 'hosts.update_bank',
   HOSTS_SUSPEND: 'hosts.suspend',
+  HOSTS_REACTIVATE: 'hosts.reactivate',
+  HOSTS_TERMINATE: 'hosts.terminate',
 
   SCREENS_VIEW: 'screens.view',
   SCREENS_PAUSE: 'screens.pause',
+  SCREENS_RESUME: 'screens.resume',
+  SCREENS_REBOOT: 'screens.reboot',
   SCREENS_REASSIGN: 'screens.reassign',
   SCREENS_RETIRE: 'screens.retire',
+  SCREENS_FORCE_UPDATE: 'screens.force_update',
 
   PAYOUTS_VIEW: 'payouts.view',
   PAYOUTS_APPROVE: 'payouts.approve',
@@ -47,6 +57,7 @@ export const PERM = {
   REFUNDS_APPROVE: 'refunds.approve',
 
   TAX_VIEW: 'tax.view',
+  TAX_REMIT: 'tax.remit',
 
   ADMIN_USERS_VIEW: 'admin_users.view',
   ADMIN_USERS_CREATE: 'admin_users.create',
@@ -80,8 +91,11 @@ export const ROLE_PERMISSIONS = {
 
   vetting_agent: [
     PERM.CREATIVES_VIEW,
+    PERM.CREATIVES_REVIEW,
     PERM.CREATIVES_APPROVE,
     PERM.CREATIVES_REJECT,
+    PERM.CREATIVES_APCON_SUBMIT,
+    PERM.CREATIVES_APCON_MARK,
     PERM.ADVERTISERS_VIEW,
     PERM.MONITORING_VIEW,
   ],
@@ -93,6 +107,7 @@ export const ROLE_PERMISSIONS = {
     PERM.REFUNDS_VIEW,
     PERM.REFUNDS_APPROVE,
     PERM.TAX_VIEW,
+    PERM.TAX_REMIT,
     PERM.ADVERTISERS_VIEW,
     PERM.ADVERTISERS_WALLET_ADJUST,
     PERM.HOSTS_VIEW,

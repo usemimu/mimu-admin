@@ -63,4 +63,27 @@ export const vettingApi = {
     )
     return data
   },
+
+  // APCON workflow on creatives — internal-approved creatives queue
+  // here while we wait on the regulator. The mark-* actions are how
+  // ops records the outcome of the physical APCON submission.
+  async creativeApconQueue(params = {}) {
+    const { data } = await http.get('/creatives/apcon-queue', { params })
+    return data
+  },
+  async markCreativeApconSubmitted(id, body = {}) {
+    // body: { referenceNumber? }
+    const { data } = await http.post(`/creatives/${id}/apcon/submit`, body)
+    return data
+  },
+  async markCreativeApconApproved(id, body) {
+    // body: { certificateNumber, expiryDate }
+    const { data } = await http.post(`/creatives/${id}/apcon/mark-approved`, body)
+    return data
+  },
+  async markCreativeApconRejected(id, body) {
+    // body: { reason }
+    const { data } = await http.post(`/creatives/${id}/apcon/mark-rejected`, body)
+    return data
+  },
 }

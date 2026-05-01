@@ -1,6 +1,6 @@
-# mìmú Admin Console
+# Mimuads Admin Console
 
-A Vue 3 + Tailwind CSS conversion of the mìmú Admin Console, featuring a comprehensive admin interface for managing screens, hosts, advertisers, payouts, and more.
+A Vue 3 + Tailwind CSS conversion of the Mimuads Admin Console, featuring a comprehensive admin interface for managing screens, hosts, advertisers, payouts, and more.
 
 ## Features
 

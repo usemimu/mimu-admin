@@ -38,8 +38,11 @@
               class="border-t border-[var(--border)]"
             >
               <td class="p-3">
-                <div class="font-semibold">{{ iv.businessName || iv.email || iv.phone || '—' }}</div>
-                <div class="mono text-[11px] text-[var(--fg-3)]">{{ iv.phone || iv.email || iv.id }}</div>
+                <div class="font-semibold">{{ iv.businessName || iv.phoneNumber || '—' }}</div>
+                <div class="mono text-[11px] text-[var(--fg-3)]">
+                  {{ iv.phoneNumber || iv.id }}
+                  <span v-if="iv.lga" class="fg2"> · {{ iv.lga }}</span>
+                </div>
               </td>
               <td class="p-3">
                 <span class="pill" :class="pillClass(iv.status)">{{ iv.status || 'pending' }}</span>
@@ -75,25 +78,92 @@
         <div style="font-size: 14px; font-weight: 700; margin-bottom: 12px">New invite</div>
         <form class="space-y-3" @submit.prevent="onCreate">
           <div>
+            <label class="text-xs fg2 block mb-1">
+              Owner name <span class="fg2">(used as dashboard greeting)</span>
+            </label>
+            <input
+              v-model.trim="form.recipientName"
+              class="input"
+              placeholder="e.g. Tunde Adebayo"
+            />
+          </div>
+          <div>
             <label class="text-xs fg2 block mb-1">Business name</label>
-            <input v-model="form.businessName" class="input" placeholder="e.g. Apex Pharmacy" />
+            <input
+              v-model.trim="form.businessName"
+              class="input"
+              placeholder="e.g. Apex Pharmacy"
+              required
+            />
+          </div>
+          <div>
+            <label class="text-xs fg2 block mb-1">
+              Business address <span class="fg2">(street, building, landmark)</span>
+            </label>
+            <textarea
+              v-model.trim="form.businessAddress"
+              class="input"
+              rows="2"
+              placeholder="e.g. 12 Allen Avenue, opposite Shoprite, Ikeja"
+            ></textarea>
           </div>
           <div>
             <label class="text-xs fg2 block mb-1">Phone</label>
-            <input v-model="form.phone" class="input" placeholder="+2348012345678" />
+            <input
+              v-model.trim="form.phoneNumber"
+              class="input"
+              placeholder="+2348012345678"
+              inputmode="tel"
+              required
+            />
           </div>
           <div>
-            <label class="text-xs fg2 block mb-1">Email (optional)</label>
-            <input v-model="form.email" type="email" class="input" placeholder="host@example.com" />
+            <label class="text-xs fg2 block mb-1">
+              Email <span class="fg2">(optional · used on create + resend)</span>
+            </label>
+            <input
+              v-model.trim="form.email"
+              class="input"
+              type="email"
+              placeholder="host@example.com"
+            />
+          </div>
+          <div>
+            <label class="text-xs fg2 block mb-1">Business category</label>
+            <select v-model="form.businessCategory" class="input" required>
+              <option value="" disabled>Select category…</option>
+              <option v-for="c in BUSINESS_CATEGORIES" :key="c" :value="c">
+                {{ c.charAt(0).toUpperCase() + c.slice(1) }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs fg2 block mb-1">LGA</label>
+            <select v-model="form.lga" class="input" required>
+              <option value="" disabled>Select LGA…</option>
+              <option v-for="l in LAGOS_LGAS" :key="l" :value="l">{{ l }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs fg2 block mb-1">Notes (optional)</label>
+            <textarea
+              v-model.trim="form.notes"
+              class="input"
+              rows="2"
+              placeholder="e.g. screen reserved at lobby entrance"
+            ></textarea>
           </div>
           <button
             type="submit"
             class="btn primary"
             style="width: 100%; margin-top: 8px"
-            :disabled="creating || !form.phone"
+            :disabled="creating || !canSubmit"
           >
             {{ creating ? 'Sending…' : 'Send invite' }}
           </button>
+          <p class="fg2 text-xs" style="margin: 0;">
+            SMS + email fire automatically; the WhatsApp link is returned for ops to share.
+          </p>
         </form>
       </div>
     </div>
@@ -135,24 +205,82 @@ function pillClass(status) {
   return 'pill-pending'
 }
 
-const form = reactive({ businessName: '', phone: '', email: '' })
+// Backend DTO requires phoneNumber, businessName, businessCategory,
+// lga (all NOT NULL on the host_invites table). The earlier form
+// shape (phone/email-only) crashed the service before it could even
+// run validation. The lists below are kept inline rather than
+// imported from a shared module — they're presentational and only
+// needed here.
+const BUSINESS_CATEGORIES = [
+  'pharmacy',
+  'salon',
+  'restaurant',
+  'eatery',
+  'supermarket',
+  'electronics',
+  'fashion',
+  'fitness',
+  'automotive',
+  'grocery',
+  'clinic',
+  'other',
+]
+
+const LAGOS_LGAS = [
+  'Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa',
+  'Badagry', 'Epe', 'Eti-Osa', 'Ibeju-Lekki', 'Ifako-Ijaiye',
+  'Ikeja', 'Ikorodu', 'Kosofe', 'Lagos Island', 'Lagos Mainland',
+  'Mushin', 'Ojo', 'Oshodi-Isolo', 'Shomolu', 'Surulere',
+]
+
+const form = reactive({
+  recipientName: '',
+  businessName: '',
+  phoneNumber: '',
+  email: '',
+  businessCategory: '',
+  businessAddress: '',
+  lga: '',
+  notes: '',
+})
 const creating = ref(false)
 const busyId = ref(null)
 
+const canSubmit = computed(
+  () =>
+    form.businessName.trim().length > 0 &&
+    form.phoneNumber.trim().length > 0 &&
+    !!form.businessCategory &&
+    !!form.lga,
+)
+
 async function onCreate() {
+  if (!canSubmit.value) return
   creating.value = true
   try {
-    const body = { phone: form.phone }
-    if (form.businessName) body.businessName = form.businessName
+    const body = {
+      phoneNumber: form.phoneNumber,
+      businessName: form.businessName,
+      businessCategory: form.businessCategory,
+      lga: form.lga,
+    }
+    if (form.recipientName) body.recipientName = form.recipientName
+    if (form.businessAddress) body.businessAddress = form.businessAddress
     if (form.email) body.email = form.email
+    if (form.notes) body.notes = form.notes
     await hostInvitesApi.create(body)
     toast.success('Invite sent.')
+    form.recipientName = ''
     form.businessName = ''
-    form.phone = ''
+    form.phoneNumber = ''
     form.email = ''
+    form.businessCategory = ''
+    form.businessAddress = ''
+    form.lga = ''
+    form.notes = ''
     await qc.invalidateQueries({ queryKey: qk.hostInvites() })
   } catch (err) {
-    toast.error(err?.message || 'Could not send invite.')
+    toast.error(err?.response?.data?.message || err?.message || 'Could not send invite.')
   } finally {
     creating.value = false
   }

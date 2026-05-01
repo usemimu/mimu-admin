@@ -115,6 +115,7 @@ const NAV = [
   {
     group: 'Operations',
     items: [
+      { id: 'payments', icon: 'ph-credit-card', label: 'Payments', requires: PERM.TAX_VIEW },
       { id: 'audit', icon: 'ph-scroll', label: 'Audit log', requires: PERM.AUDIT_VIEW },
     ],
   },

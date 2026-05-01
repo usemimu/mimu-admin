@@ -74,6 +74,94 @@
             </div>
           </div>
 
+          <!-- Security · 2FA — live, lets the admin regenerate their
+               TOTP secret + backup codes. Backend resets `totp_enrolled`
+               on re-enroll, so the flow is: enroll → show QR/secret/codes
+               → verify a code from the new authenticator → done.
+               -->
+          <div v-else-if="activeSection === 'security'" class="card">
+            <div class="card-head">
+              <div class="card-title">Two-factor authentication</div>
+              <div class="spacer"></div>
+              <span class="pill pill-active sm">
+                <i class="ph ph-shield-check"></i> enrolled
+              </span>
+            </div>
+            <div class="card-body" style="padding: 16px;">
+              <p class="fg2 text-sm" style="margin: 0 0 14px;">
+                Your account is protected by an authenticator app. You can
+                regenerate the secret + backup codes at any time — this
+                <strong>invalidates the old codes</strong>, so don't close this
+                page until you've verified the new code.
+              </p>
+
+              <!-- Step 0: idle -->
+              <div v-if="totpStep === 'idle'">
+                <button
+                  class="btn outline sm"
+                  @click="startReenroll"
+                  :disabled="enrollMutation.isPending.value"
+                >
+                  <i class="ph ph-arrows-clockwise"></i>
+                  {{ enrollMutation.isPending.value ? 'Generating…' : 'Regenerate 2FA' }}
+                </button>
+              </div>
+
+              <!-- Step 1: enrollment generated, show QR + codes + verify input -->
+              <div v-else-if="totpStep === 'verify' && enrollData" style="display: grid; gap: 14px;">
+                <div class="totp-grid">
+                  <div>
+                    <div class="totp-label">Scan with authenticator</div>
+                    <img v-if="enrollData.qrCodeDataUrl" :src="enrollData.qrCodeDataUrl" class="totp-qr" alt="TOTP QR" />
+                  </div>
+                  <div>
+                    <div class="totp-label">Or paste this secret manually</div>
+                    <code class="totp-secret">{{ enrollData.secret }}</code>
+                    <div class="totp-label" style="margin-top: 14px;">Backup codes (one-time use)</div>
+                    <div class="totp-backup">
+                      <code v-for="c in enrollData.backupCodes" :key="c">{{ c }}</code>
+                    </div>
+                    <button
+                      class="btn ghost xs"
+                      style="margin-top: 6px;"
+                      @click="copyBackupCodes"
+                    >
+                      <i class="ph ph-copy"></i> Copy codes
+                    </button>
+                  </div>
+                </div>
+
+                <div style="border-top: 1px solid var(--border); padding-top: 14px;">
+                  <label class="text-xs fg2 block mb-1">
+                    Enter the 6-digit code from your authenticator to confirm
+                  </label>
+                  <div class="flex" style="gap: 8px;">
+                    <input
+                      v-model="totpCode"
+                      class="input"
+                      maxlength="6"
+                      placeholder="123456"
+                      style="width: 140px; font-family: var(--f-mono); letter-spacing: 0.2em; text-align: center;"
+                      @keyup.enter="confirmReenroll"
+                    />
+                    <button
+                      class="btn primary sm"
+                      :disabled="totpCode.length !== 6 || verifyMutation.isPending.value"
+                      @click="confirmReenroll"
+                    >
+                      {{ verifyMutation.isPending.value ? 'Verifying…' : 'Confirm' }}
+                    </button>
+                    <button class="btn ghost sm" @click="cancelReenroll">Cancel</button>
+                  </div>
+                  <p class="fg2 text-xs" style="margin: 8px 0 0;">
+                    If you cancel before confirming, your old code stops working.
+                    You'll need to sign out and re-enroll on next login.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Notifications: live, per-admin -->
           <div v-else-if="activeSection === 'notifications'" class="card">
             <div class="card-head">
@@ -110,23 +198,6 @@
             </div>
           </div>
 
-          <!-- Read-only / non-wired sections — clearly marked as backend-config -->
-          <div v-else class="card">
-            <div class="card-head">
-              <div class="card-title">{{ currentSection.label }}</div>
-              <div class="spacer"></div>
-              <span class="pill pill-pending sm">Backend config</span>
-            </div>
-            <div class="card-body" style="padding: 16px;">
-              <p class="fg2" style="margin: 0 0 12px; line-height: 1.5;">
-                {{ currentSection.copy }}
-              </p>
-              <p class="fg2 text-xs" style="margin: 0;">
-                Edit these via the API service's environment variables / config — the admin
-                console doesn't expose write access yet.
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -134,19 +205,24 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { reactive, ref, watch } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+
 import { adminUsersApi } from '../api/admin-users'
+import { authApi } from '../api/auth'
 import { useAuthStore } from '../stores/auth'
 import { useToastStore } from '../stores/toast'
 import { useCurrentAdmin } from '../composables/useCurrentAdmin'
+import { useLogout } from '../composables/useLogout'
 import { qk } from '../lib/queryKeys'
 
-const router = useRouter()
 const auth = useAuthStore()
 const toast = useToastStore()
 const qc = useQueryClient()
+// Same logout flow App.vue's Topbar dropdown uses — clears query
+// cache, replaces history, toasts, redirects. One code path for all
+// signout surfaces.
+const { logout } = useLogout()
 
 // Read directly from the auth store — no parallel /me call. The
 // heartbeat in App.vue keeps `me.user` and `me.lastVerifiedAt` fresh.
@@ -168,30 +244,9 @@ const activeSection = ref('account')
 
 const sections = [
   { id: 'account', label: 'Account', icon: 'ph-user' },
-  {
-    id: 'payments',
-    label: 'Payments',
-    icon: 'ph-currency-circle-dollar',
-    copy: 'Paystack keys, WHT rate, payout schedule and minimum payout threshold are loaded from the API service env (PAYSTACK_*, WHT_RATE, PAYOUT_*).',
-  },
-  {
-    id: 'apcon',
-    label: 'APCON',
-    icon: 'ph-shield-check',
-    copy: 'APCON auto-approve categories and SLA are configured in the campaigns/creatives services. There is no UI surface to edit them yet.',
-  },
-  {
-    id: 'fraud',
-    label: 'Fraud detection',
-    icon: 'ph-shield-warning',
-    copy: 'Fraud thresholds (score cutoff, auto-hold trigger, CV confidence) live in the fraud service. They are tuned in code, not via the console.',
-  },
+  { id: 'security', label: 'Security · 2FA', icon: 'ph-shield-check' },
   { id: 'notifications', label: 'Notifications', icon: 'ph-bell' },
 ]
-
-const currentSection = computed(() =>
-  sections.find((s) => s.id === activeSection.value) ?? sections[0],
-)
 
 // ── Notification preferences ────────────────────────────────────────
 const prefsRows = [
@@ -266,14 +321,9 @@ function togglePref(key, value) {
   prefsMutation.mutate({ [key]: value })
 }
 
-async function logout() {
-  // Route through the store so cookie clear, state flip, and any
-  // cross-tab listeners stay in sync. The store swallows network
-  // failures on the remote logout call (best-effort).
-  await auth.logout()
-  toast.success('Signed out.')
-  router.push('/auth')
-}
+// `logout` comes from the useLogout() import above — single shared
+// flow across the app (clears query cache, history-replaces to /auth,
+// toasts). The Sign-out button on this page binds @click="logout".
 
 const reverifying = ref(false)
 
@@ -294,4 +344,118 @@ async function reverifySession() {
     reverifying.value = false
   }
 }
+
+// ── 2FA re-enrollment ────────────────────────────────────────────────
+// Three-step flow shared with the initial-setup screen:
+//   idle → click "Regenerate" → enroll endpoint returns { secret, qr,
+//   backupCodes } and we move to `verify`. The user scans + types the
+//   code from their authenticator. Verify endpoint promotes the new
+//   secret to active. Cancelling mid-flow is destructive (the old
+//   secret has already been replaced server-side) — the help text
+//   explains it.
+const totpStep = ref('idle') // 'idle' | 'verify'
+const enrollData = ref(null)
+const totpCode = ref('')
+
+const enrollMutation = useMutation({
+  mutationFn: () => authApi.enrollTotp(),
+  onSuccess: (data) => {
+    enrollData.value = data
+    totpStep.value = 'verify'
+    totpCode.value = ''
+  },
+  onError: (err) => {
+    toast.error(err?.message || 'Could not start re-enrollment.')
+  },
+})
+
+const verifyMutation = useMutation({
+  mutationFn: (code) => authApi.verifyTotpEnrollment(code),
+  onSuccess: () => {
+    toast.success('2FA regenerated. Old codes no longer work.')
+    enrollData.value = null
+    totpCode.value = ''
+    totpStep.value = 'idle'
+  },
+  onError: (err) => {
+    toast.error(err?.message || 'Code did not verify — try again.')
+  },
+})
+
+function startReenroll() {
+  if (!confirm('Regenerate 2FA? Your current secret + backup codes will stop working immediately.')) return
+  enrollMutation.mutate()
+}
+
+function confirmReenroll() {
+  if (totpCode.value.length !== 6) return
+  verifyMutation.mutate(totpCode.value)
+}
+
+function cancelReenroll() {
+  // Server-side the new secret has already replaced the old one. We
+  // can't undo that — best we can do is surface the implication.
+  enrollData.value = null
+  totpCode.value = ''
+  totpStep.value = 'idle'
+  toast.warning('Re-enrollment cancelled. Your old codes have been invalidated — sign out and back in to start over.')
+}
+
+async function copyBackupCodes() {
+  if (!enrollData.value?.backupCodes?.length) return
+  try {
+    await navigator.clipboard.writeText(enrollData.value.backupCodes.join('\n'))
+    toast.success('Backup codes copied.')
+  } catch {
+    toast.error('Clipboard unavailable — copy them manually.')
+  }
+}
 </script>
+
+<style scoped>
+.totp-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.totp-label {
+  font-size: 11px;
+  color: var(--fg-3);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.totp-qr {
+  width: 200px;
+  height: 200px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  padding: 6px;
+}
+.totp-secret {
+  display: inline-block;
+  font-family: var(--f-mono);
+  font-size: 12px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  border-radius: 4px;
+  word-break: break-all;
+}
+.totp-backup {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+}
+.totp-backup code {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  padding: 4px 6px;
+  border-radius: 3px;
+  text-align: center;
+}
+</style>

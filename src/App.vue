@@ -55,6 +55,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+
 import Sidebar from './components/Sidebar.vue'
 import Topbar from './components/Topbar.vue'
 import CmdK from './components/CmdK.vue'
@@ -63,9 +64,11 @@ import DrawerPayout from './components/DrawerPayout.vue'
 import ToastHost from './components/ToastHost.vue'
 import ReauthModal from './components/ReauthModal.vue'
 import { useAuthStore } from './stores/auth'
+import { useLogout } from './composables/useLogout'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { logout } = useLogout()
 
 const theme = ref(localStorage.getItem('mimu-admin-theme') || 'light')
 const collapsed = ref(false)
@@ -96,10 +99,9 @@ const handleNavigate = (page) => {
   router.push(`/${page === 'dashboard' ? '' : page}`)
 }
 
-const handleLogout = async () => {
-  await auth.logout()
-  router.push({ name: 'auth' })
-}
+// Single source of truth for "user signed out" — see useLogout.
+// The Topbar emits this; the Settings page calls the same composable.
+const handleLogout = () => logout()
 
 // Global keyboard shortcuts.
 const handleKeydown = (e) => {

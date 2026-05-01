@@ -45,10 +45,16 @@ export const qk = {
   creatives: (filters = {}) => ['admin', 'creatives', 'list', filters],
   creativeDetail: (id) => ['admin', 'creatives', 'detail', id],
   creativeVettingQueue: () => ['admin', 'creatives', 'vetting-queue'],
+  creativeApconQueue: () => ['admin', 'creatives', 'apcon-queue'],
 
   // Fraud
   fraudQueue: (filters = {}) => ['admin', 'fraud', 'queue', filters],
   fraudEvidence: (id) => ['admin', 'fraud', 'evidence', id],
+  fraudRefunds: (filters = {}) => ['admin', 'fraud', 'refunds', filters],
+
+  // Finance / Paystack reconciliation
+  reconciliationSummary: () => ['admin', 'finance', 'reconciliation', 'summary'],
+  bankSettlementSummary: () => ['admin', 'finance', 'bank-settlement', 'summary'],
 
   // Payouts
   payoutsPending: () => ['admin', 'payouts', 'pending'],

@@ -31,8 +31,9 @@
 
       <div class="relative">
         <div
+          ref="trigger"
           class="flex items-center gap-2 px-1.5 cursor-pointer hover:bg-[var(--bg-hover)] rounded"
-          @click="showProfileMenu = !showProfileMenu"
+          @click="toggleMenu"
         >
           <img
             v-if="me.avatarUrl.value"
@@ -50,48 +51,68 @@
           </div>
           <i class="ph ph-caret-down text-xs text-[var(--fg-3)]"></i>
         </div>
-
-        <!-- Profile dropdown -->
-        <div
-          v-if="showProfileMenu"
-          @click.stop
-          class="absolute right-0 top-full mt-1 w-56 bg-[var(--bg-raised)] border border-[var(--border)] rounded-lg shadow-lg z-50"
-        >
-          <div class="p-3 border-b border-[var(--border)]">
-            <div class="font-semibold text-sm">{{ me.displayName.value }}</div>
-            <div class="text-xs text-[var(--fg-3)]">{{ me.email.value }}</div>
-            <div v-if="me.roleLabel.value" class="pill pill-neutral sm mt-1">
-              {{ me.roleLabel.value }}
-            </div>
-          </div>
-          <div class="p-1">
-            <button
-              class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm"
-              @click="navigateToSettings"
-            >
-              <i class="ph ph-gear-six"></i> Settings
-            </button>
-          </div>
-          <div class="p-1 border-t border-[var(--border)]">
-            <button
-              class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm text-danger-500"
-              @click="handleLogout"
-            >
-              <i class="ph ph-sign-out"></i> Logout
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
 
-  <!-- Overlay to close dropdown -->
-  <div v-if="showProfileMenu" @click="showProfileMenu = false" class="fixed inset-0 z-40"></div>
+  <!--
+    Profile dropdown is teleported to <body> so it shares the root
+    stacking context with the click-catcher overlay below. Without
+    this, the topbar's own `z-[5]` stacking context kept the dropdown
+    *below* the overlay (which sits at z-40), and clicks on Settings/
+    Logout hit the overlay first and never reached the buttons.
+
+    `position: fixed` + dynamic top/right snaps the menu to the
+    trigger's bounding box; `triggerRect` recomputes on every open.
+  -->
+  <Teleport to="body">
+    <div
+      v-if="showProfileMenu"
+      @click="closeMenu"
+      class="fixed inset-0"
+      style="z-index: 998;"
+    ></div>
+    <div
+      v-if="showProfileMenu"
+      class="fixed w-56 bg-[var(--bg-raised)] border border-[var(--border)] rounded-lg shadow-lg"
+      :style="{
+        zIndex: 999,
+        top: `${triggerRect.bottom + 4}px`,
+        right: `${triggerRect.rightFromViewport}px`,
+      }"
+      @click.stop
+    >
+      <div class="p-3 border-b border-[var(--border)]">
+        <div class="font-semibold text-sm">{{ me.displayName.value }}</div>
+        <div class="text-xs text-[var(--fg-3)]">{{ me.email.value }}</div>
+        <div v-if="me.roleLabel.value" class="pill pill-neutral sm mt-1">
+          {{ me.roleLabel.value }}
+        </div>
+      </div>
+      <div class="p-1">
+        <button
+          class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm"
+          @click="navigateToSettings"
+        >
+          <i class="ph ph-gear-six"></i> Settings
+        </button>
+      </div>
+      <div class="p-1 border-t border-[var(--border)]">
+        <button
+          class="w-full text-left px-3 py-2 hover:bg-[var(--bg-hover)] rounded flex items-center gap-2 text-sm text-danger-500"
+          @click="handleLogout"
+        >
+          <i class="ph ph-sign-out"></i> Logout
+        </button>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+
 import { useCurrentAdmin } from '../composables/useCurrentAdmin'
 
 const router = useRouter()
@@ -107,14 +128,43 @@ const emit = defineEmits(['toggle-theme', 'toggle-sidebar', 'open-cmdk', 'logout
 const me = useCurrentAdmin()
 
 const showProfileMenu = ref(false)
+const trigger = ref(null)
+// Position of the avatar trigger in viewport coordinates. The menu is
+// teleported to <body> and rendered with `position: fixed`, so we
+// have to compute these ourselves rather than rely on the trigger's
+// stacking context.
+const triggerRect = reactive({ bottom: 0, rightFromViewport: 0 })
+
+function captureTriggerPosition() {
+  const el = trigger.value
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  triggerRect.bottom = r.bottom
+  // CSS `right` is measured from the viewport's right edge, so we
+  // subtract the trigger's right edge from window.innerWidth.
+  triggerRect.rightFromViewport = window.innerWidth - r.right
+}
+
+function toggleMenu() {
+  if (showProfileMenu.value) {
+    showProfileMenu.value = false
+    return
+  }
+  captureTriggerPosition()
+  showProfileMenu.value = true
+}
+
+function closeMenu() {
+  showProfileMenu.value = false
+}
 
 const navigateToSettings = () => {
-  showProfileMenu.value = false
+  closeMenu()
   router.push('/settings')
 }
 
 const handleLogout = () => {
-  showProfileMenu.value = false
+  closeMenu()
   emit('logout')
 }
 </script>
